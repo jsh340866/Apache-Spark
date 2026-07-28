@@ -1,0 +1,18 @@
+services:
+  jupyter:
+    image: quay.io/jupyter/pyspark-notebook:latest
+    container_name: sparkTEST-lab
+    ports:
+      - "8888:8888"   # JupyterLab
+      - "4040:4040"   # Spark UI ★ 반드시 추가
+      - "4041:4041"   # 세션 여러 개 뜰 때 대비
+    volumes:
+      - ./work:/home/jovyan/work    # 노트북 + CSV 보관 (재시작해도 유지)
+    command: >
+      bash -c "pip install --no-cache-dir 'pyarrow>=18.0.0' &&
+               start-notebook.sh --IdentityProvider.token=''"
+    environment:
+      - JUPYTER_TOKEN=spark         # 매번 토큰 찾기 귀찮으면 고정
+      - GRANT_SUDO=yes              # 컨테이너 안에서 apt 쓸 일 대비
+    user: root                      # GRANT_SUDO 쓰려면 필요
+    working_dir: /home/jovyan/work
