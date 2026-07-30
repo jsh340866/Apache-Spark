@@ -1,0 +1,166 @@
+.back-link {
+  display: inline-block;
+  margin-bottom: 14px;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.page-head {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  margin-bottom: 16px;
+}
+
+.page-head h1 {
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+
+.page-head p {
+  color: var(--text-sub);
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.admin-card:hover {
+  border-color: #d1d6db;
+  box-shadow: var(--shadow);
+}
+
+.admin-card h2 {
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.admin-card p {
+  color: var(--text-sub);
+}
+
+.sync-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sync-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.sync-card h2 {
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+
+.sync-card p {
+  color: var(--text-sub);
+  margin-bottom: 12px;
+}
+
+.log-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.log-panel h3 {
+  margin-bottom: 10px;
+}
+
+.log-list {
+  display: grid;
+  gap: 8px;
+}
+
+.log-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text-sub);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.admin-table th {
+  background: #fafbfc;
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-outline {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-weight: 600;
+}
+
+.btn-danger {
+  border: 1px solid #ffd0d5;
+  background: #fff5f6;
+  color: #d92d20;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-weight: 700;
+}
+
+.pill {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pill.good {
+  background: #e8fff2;
+  color: #15803d;
+}
+
+.pill.blocked {
+  background: #fff2f2;
+  color: #b42318;
+}
+
+@media (max-width: 1024px) {
+  .admin-grid,
+  .sync-grid {
+    grid-template-columns: 1fr;
+  }
+}

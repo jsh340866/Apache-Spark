@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>회원가입 — ValuePick</title>
+  <link rel="stylesheet" href="css/common.css" />
+  <link rel="stylesheet" href="css/auth.css" />
+</head>
+<body class="auth-page" data-page="register">
+
+<div id="header-placeholder"></div>
+
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <a class="brand" href="index.html">ValuePick</a>
+    </div>
+    <h1 class="auth-title">회원가입</h1>
+    <p class="auth-desc">서비스를 이용하려면 계정을 만들어주세요.</p>
+
+    <div class="alert" id="alertBox" role="alert" aria-live="polite"></div>
+
+    <form id="registerForm" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="email">이메일</label>
+        <input class="form-input" type="email" id="email" name="email" placeholder="example@email.com" autocomplete="email" required />
+        <span class="field-error" id="emailError" role="alert"></span>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="nickname">닉네임</label>
+        <input class="form-input" type="text" id="nickname" name="nickname" placeholder="표시될 이름" autocomplete="nickname" required />
+        <span class="field-error" id="nicknameError" role="alert"></span>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="password">비밀번호</label>
+        <input class="form-input" type="password" id="password" name="password" placeholder="8자 이상 입력" autocomplete="new-password" required minlength="8" />
+        <span class="password-hint">영문, 숫자 포함 8자 이상을 권장합니다.</span>
+        <span class="field-error" id="passwordError" role="alert"></span>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="passwordConfirm">비밀번호 확인</label>
+        <input class="form-input" type="password" id="passwordConfirm" name="passwordConfirm" placeholder="비밀번호 재입력" autocomplete="new-password" required />
+        <span class="field-error" id="passwordConfirmError" role="alert"></span>
+      </div>
+      <button class="btn-submit" type="submit" id="submitBtn">회원가입</button>
+    </form>
+
+    <div class="auth-footer">
+      이미 계정이 있으신가요?
+      <a href="login.html">로그인</a>
+    </div>
+  </div>
+</div>
+
+<div id="footer-placeholder"></div>
+
+<script src="js/data.js"></script>
+<script src="js/common.js"></script>
+<script src="js/auth.js"></script>
+</body>
+</html>

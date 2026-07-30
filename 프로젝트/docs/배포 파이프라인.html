@@ -1,0 +1,407 @@
+<title>ValuePick CI/CD Pipeline — 배포 파이프라인</title>
+<style>
+  :root{
+    --bg:#e7eee6;
+    --surface:#fbfdfa;
+    --surface-2:#eef3ec;
+    --ink:#16211a;
+    --ink-soft:#4b564d;
+    --ink-faint:#7c8a7e;
+    --line:#cdd8cb;
+    --line-strong:#94a695;
+    --accent:#9c3f2e;
+    --accent-soft:#f2ded8;
+    --zoneA:#a5751f;
+    --zoneB:#2f5b78;
+    --zoneC:#7c4f6b;
+    --flow-push:var(--zoneB);
+    --flow-webhook:var(--accent);
+    --flow-ec2:var(--zoneA);
+    --flow-stage:var(--zoneC);
+    --flow-running:#2f7d4f;
+    --font-display:"Iowan Old Style","Palatino Linotype","Nanum Myeongjo","Noto Serif KR",Georgia,serif;
+    --font-body:"Malgun Gothic","Apple SD Gothic Neo","Segoe UI",sans-serif;
+    --font-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#10150f;
+      --surface:#171d17;
+      --surface-2:#1e251e;
+      --ink:#e7eee5;
+      --ink-soft:#a9b6aa;
+      --ink-faint:#71806f;
+      --line:#2a332a;
+      --line-strong:#465143;
+      --accent:#e37a5f;
+      --accent-soft:#3a251e;
+      --zoneA:#d9a94b;
+      --zoneB:#75aecf;
+      --zoneC:#c087ab;
+      --flow-push:var(--zoneB);
+      --flow-webhook:var(--accent);
+      --flow-ec2:var(--zoneA);
+      --flow-stage:var(--zoneC);
+      --flow-running:#5fbf88;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#10150f; --surface:#171d17; --surface-2:#1e251e;
+    --ink:#e7eee5; --ink-soft:#a9b6aa; --ink-faint:#71806f;
+    --line:#2a332a; --line-strong:#465143;
+    --accent:#e37a5f; --accent-soft:#3a251e;
+    --zoneA:#d9a94b; --zoneB:#75aecf; --zoneC:#c087ab;
+    --flow-push:var(--zoneB); --flow-webhook:var(--accent);
+    --flow-ec2:var(--zoneA); --flow-stage:var(--zoneC);
+    --flow-running:#5fbf88;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"]{
+    --bg:#e7eee6; --surface:#fbfdfa; --surface-2:#eef3ec;
+    --ink:#16211a; --ink-soft:#4b564d; --ink-faint:#7c8a7e;
+    --line:#cdd8cb; --line-strong:#94a695;
+    --accent:#9c3f2e; --accent-soft:#f2ded8;
+    --zoneA:#a5751f; --zoneB:#2f5b78; --zoneC:#7c4f6b;
+    --flow-push:var(--zoneB); --flow-webhook:var(--accent);
+    --flow-ec2:var(--zoneA); --flow-stage:var(--zoneC);
+    --flow-running:#2f7d4f;
+    color-scheme: light;
+  }
+
+  *{box-sizing:border-box;}
+  body{margin:0;}
+  .page{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--font-body);
+    min-height:100%;
+    padding:2.5rem clamp(1rem,4vw,3.5rem) 4rem;
+  }
+
+  .masthead{max-width:52rem;margin:0 0 2.25rem;}
+  .eyebrow{
+    font-family:var(--font-mono);
+    font-size:.72rem;
+    letter-spacing:.14em;
+    color:var(--accent);
+    text-transform:uppercase;
+    margin:0 0 .6rem;
+    font-weight:700;
+  }
+  h1{
+    font-family:var(--font-body);
+    font-size:clamp(1.9rem,3.4vw,2.6rem);
+    font-weight:600;
+    letter-spacing:-.01em;
+    margin:0 0 .55rem;
+    text-wrap:balance;
+  }
+  .dek{
+    font-size:.98rem;
+    line-height:1.65;
+    color:var(--ink-soft);
+    max-width:42rem;
+    margin:0;
+  }
+
+  /* ---------- flow ---------- */
+  .flow{
+    display:flex;
+    align-items:stretch;
+    gap:1.1rem;
+    margin-top:2.1rem;
+    flex-wrap:wrap;
+  }
+
+  .node{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:1rem 1.4rem;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:.4rem;
+    min-width:9rem;
+    text-align:center;
+    flex:none;
+  }
+  .node-icon{font-size:1.6rem;line-height:1;}
+  .node-title{font-family:var(--font-body);font-weight:700;font-size:.95rem;color:var(--ink);}
+  .node-sub{font-size:.72rem;color:var(--ink-faint);}
+  .badge{
+    font-family:var(--font-mono);
+    font-size:.68rem;
+    padding:.18rem .55rem;
+    border:1px solid var(--line-strong);
+    border-radius:999px;
+    color:var(--ink-soft);
+  }
+
+  .arrow{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:.4rem;
+    min-width:6.5rem;
+    flex:none;
+  }
+  .arrow-label{
+    font-family:var(--font-mono);
+    font-size:.66rem;
+    color:var(--ink-faint);
+    white-space:nowrap;
+  }
+  .arrow-line{
+    position:relative;
+    width:100%;
+    height:2px;
+    background:var(--ac);
+  }
+  .arrow-line::after{
+    content:'';
+    position:absolute;
+    right:-1px;top:50%;
+    transform:translateY(-50%);
+    border:5px solid transparent;
+    border-left-color:var(--ac);
+  }
+  .arrow.dashed .arrow-line{
+    background:none;
+    border-top:2px dashed var(--ac);
+    height:0;
+  }
+
+  .ec2{
+    position:relative;
+    flex:1 1 34rem;
+    border:2px dashed var(--flow-ec2);
+    border-radius:10px;
+    padding:1.4rem 1.4rem 1.5rem;
+    background:var(--surface);
+  }
+  .ec2-label{
+    position:absolute;
+    top:-.75rem;left:1.1rem;
+    background:var(--bg);
+    padding:0 .55rem;
+    font-family:var(--font-mono);
+    font-size:.74rem;
+    font-weight:700;
+    color:var(--flow-ec2);
+  }
+
+  .banner{
+    background:var(--accent-soft);
+    border:1px solid var(--flow-webhook);
+    border-radius:6px;
+    padding:.65rem .9rem;
+    font-size:.78rem;
+    line-height:1.55;
+    color:var(--ink);
+    margin:.5rem 0 1.2rem;
+  }
+
+  .jenkins-head{margin-bottom:.9rem;display:flex;align-items:baseline;gap:.55rem;flex-wrap:wrap;}
+  .jenkins-icon{font-size:1rem;}
+  .jenkins-title{font-family:var(--font-body);font-weight:700;font-size:1rem;color:var(--ink);}
+  .jenkins-sub{font-size:.72rem;color:var(--ink-faint);}
+
+  .stages{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:1.1rem;
+  }
+  .stage{
+    position:relative;
+    background:var(--surface-2);
+    border:1px solid var(--line);
+    border-top:3px solid var(--flow-stage);
+    border-radius:6px;
+    padding:.8rem .7rem;
+    display:flex;
+    flex-direction:column;
+    gap:.3rem;
+  }
+  .stage:not(:last-child)::after{
+    content:'›';
+    position:absolute;
+    right:-.95rem;top:50%;
+    transform:translateY(-50%);
+    color:var(--flow-stage);
+    font-weight:700;
+    font-size:1.1rem;
+  }
+  .stage-no{font-family:var(--font-mono);font-size:.68rem;font-weight:700;color:var(--flow-stage);}
+  .stage-name{display:flex;align-items:center;gap:.35rem;font-weight:700;font-size:.86rem;color:var(--ink);}
+  .stage code{
+    font-family:var(--font-mono);
+    font-size:.68rem;
+    color:var(--ink-soft);
+  }
+
+  .divider{border:none;border-top:1px solid var(--line);margin:1.3rem 0 .9rem;}
+  .done{font-size:.8rem;font-weight:700;color:var(--flow-running);margin-bottom:.9rem;}
+
+  .containers{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:.8rem;
+  }
+  .container-card{
+    background:var(--surface-2);
+    border:1px solid var(--line);
+    border-left:3px solid var(--flow-running);
+    border-radius:6px;
+    padding:.65rem .75rem;
+  }
+  .container-card .dot{
+    display:inline-block;
+    width:.5rem;height:.5rem;
+    border-radius:50%;
+    background:var(--flow-running);
+    margin-right:.4rem;
+  }
+  .c-name{font-family:var(--font-mono);font-weight:700;font-size:.82rem;color:var(--ink);}
+  .c-sub{font-size:.7rem;color:var(--ink-faint);margin-top:.2rem;}
+
+  /* ---------- legend ---------- */
+  .legend{
+    display:flex;flex-wrap:wrap;gap:.55rem 1.6rem;
+    margin-top:1.9rem;
+    padding:.9rem 1.1rem;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+    font-size:.78rem;
+    color:var(--ink-soft);
+  }
+  .legend .lg-group{display:flex;align-items:center;gap:.5rem;}
+  .legend .swatch{width:.62rem;height:.62rem;border-radius:50%;display:inline-block;flex:none;}
+  .legend .line-swatch{width:1.4rem;height:0;display:inline-block;flex:none;border-top:2px solid;}
+  .legend .line-swatch.dashed{border-top-style:dashed;}
+
+  footer.note{
+    max-width:52rem;margin:2.4rem 0 0;
+    font-size:.78rem;color:var(--ink-faint);line-height:1.7;
+    border-top:1px solid var(--line);padding-top:1rem;
+  }
+  footer.note code{font-family:var(--font-mono);}
+
+  @media (max-width:920px){
+    .stages{grid-template-columns:repeat(2,1fr);}
+    .stage:nth-child(2)::after{display:none;}
+    .containers{grid-template-columns:1fr;}
+  }
+
+  @media (max-width:760px){
+    .flow{flex-direction:column;align-items:stretch;}
+    .arrow{min-width:auto;flex-direction:row;padding:.2rem 0;justify-content:flex-start;gap:.6rem;}
+    .arrow-line{width:2.4rem;height:2px;}
+    .arrow.dashed .arrow-line{border-top:2px dashed var(--ac);}
+    .stages{grid-template-columns:1fr;}
+    .stage::after{display:none;}
+  }
+</style>
+
+<div class="page">
+  <header class="masthead">
+    <p class="eyebrow">CI/CD PIPELINE</p>
+    <h1>ValuePick 배포 파이프라인</h1>
+    <p class="dek">GitHub Webhook · Jenkins · Docker Compose · AWS EC2</p>
+  </header>
+
+  <main class="flow">
+    <div class="node node-dev">
+      <div class="node-icon">🧑‍💻</div>
+      <div class="node-title">Developer</div>
+      <div class="node-sub">로컬 작업</div>
+    </div>
+
+    <div class="arrow" style="--ac:var(--flow-push)">
+      <span class="arrow-label">git push / merge</span>
+      <span class="arrow-line"></span>
+    </div>
+
+    <div class="node node-github">
+      <div class="node-icon">🐙</div>
+      <div class="node-title">GitHub</div>
+      <span class="badge">⎇ main</span>
+    </div>
+
+    <div class="arrow dashed" style="--ac:var(--flow-webhook)">
+      <span class="arrow-label">Webhook 트리거</span>
+      <span class="arrow-line"></span>
+    </div>
+
+    <section class="ec2">
+      <span class="ec2-label">🟡 AWS EC2</span>
+
+      <p class="banner">🔔 Jenkins가 GitHub Webhook 수신 → main 브랜치 변경 감지 → 파이프라인 자동 시작</p>
+
+      <div class="jenkins-head">
+        <span class="jenkins-icon">⚙️</span>
+        <span class="jenkins-title">Jenkins Pipeline</span>
+        <span class="jenkins-sub">EC2 내부 실행</span>
+      </div>
+
+      <div class="stages">
+        <div class="stage">
+          <span class="stage-no">01</span>
+          <span class="stage-name">📥 Checkout</span>
+          <code>git pull main branch</code>
+        </div>
+        <div class="stage">
+          <span class="stage-no">02</span>
+          <span class="stage-name">🔨 Build</span>
+          <code>gradle build -x test</code>
+        </div>
+        <div class="stage">
+          <span class="stage-no">03</span>
+          <span class="stage-name">🐳 Docker Build</span>
+          <code>docker-compose build</code>
+        </div>
+        <div class="stage">
+          <span class="stage-no">04</span>
+          <span class="stage-name">🚀 Deploy</span>
+          <code>docker-compose up -d</code>
+        </div>
+      </div>
+
+      <hr class="divider">
+      <p class="done">✅ 컨테이너 실행 완료</p>
+
+      <div class="containers">
+        <div class="container-card">
+          <div class="c-name"><span class="dot"></span>fn-container</div>
+          <div class="c-sub">Nginx · :80/:443</div>
+        </div>
+        <div class="container-card">
+          <div class="c-name"><span class="dot"></span>bn-container</div>
+          <div class="c-sub">Spring Boot · :8080</div>
+        </div>
+        <div class="container-card">
+          <div class="c-name"><span class="dot"></span>db-container</div>
+          <div class="c-sub">MySQL 8.0 · :3306</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="legend">
+    <span class="lg-group"><span class="line-swatch" style="border-color:var(--flow-push)"></span>실선(파란색) — 코드 Push / Merge</span>
+    <span class="lg-group"><span class="line-swatch dashed" style="border-color:var(--flow-webhook)"></span>점선(빨간색) — GitHub Webhook</span>
+    <span class="lg-group"><span class="swatch" style="background:var(--flow-running)"></span>초록 점 — 컨테이너 실행 중</span>
+    <span class="lg-group"><span class="line-swatch dashed" style="border-color:var(--flow-ec2)"></span>점선 테두리(주황) — EC2 인스턴스 경계</span>
+    <span class="lg-group"><span class="line-swatch" style="border-color:var(--flow-stage)"></span>보라색 선 — 파이프라인 단계</span>
+  </div>
+
+  <footer class="note">
+    이 페이지는 <code>DOC/img/cicd-pipeline.png</code> 내용을 코드로 재현한 것으로, 별도로 추측하거나 각색한 내용은 없습니다.
+    확인 기준일 2026-07-27.
+  </footer>
+</div>

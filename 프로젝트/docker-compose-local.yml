@@ -1,0 +1,87 @@
+version: '3.8'
+
+networks:
+  custom-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet : 172.30.0.0/24
+          gateway : 172.30.0.1
+
+services:
+  db:
+    image: db
+    build:
+      context: ./DB
+      dockerfile: Dockerfile
+    container_name: db-container
+    networks:
+      custom-network:
+        ipv4_address: 172.30.0.10
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5          
+    ports:
+      - "3330:3306"
+    env_file:
+      - ./DB/.env
+    volumes:
+      # - ./DB/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - db-data:/var/lib/mysql           
+  
+  # redis:
+  #   image: redis
+  #   build:
+  #     context: ./REDIS
+  #   container_name: redis-container
+  #   ports:
+  #     - "6380:6379"
+  #   networks:
+  #     custom-network:
+  #       ipv4_address: 172.30.0.20  
+  fn:
+    image: fn-local
+    build:
+      context: ./front
+      dockerfile: Dockerfile.local
+    container_name: fn-container
+    ports:
+      - "3000:80"          # 로컬 확인용 (SSL 없이 HTTP만)
+    depends_on:
+      bn:
+        condition: service_healthy
+    networks:
+      custom-network:
+        ipv4_address: 172.30.0.30
+
+  bn:
+    image: bn
+    build:
+      context: ./valuepick
+    container_name: bn-container
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./valuepick/.env
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f  http://127.0.0.1:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    networks:
+      custom-network:
+        ipv4_address: 172.30.0.40  
+
+        
+volumes:
+  db-data:

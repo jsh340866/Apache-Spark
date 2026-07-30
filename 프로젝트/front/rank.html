@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TOP 100 랭킹 — ValuePick</title>
+  <link rel="stylesheet" href="css/common.css" />
+  <link rel="stylesheet" href="css/list.css" />
+  <link rel="stylesheet" href="css/rank.css" />
+</head>
+<body>
+
+<div id="header-placeholder"></div>
+
+<main class="main">
+  <div class="page-header">
+    <h1>TOP 100 랭킹</h1>
+    <p id="stockCount">스코어 기준 상위 100개 종목</p>
+  </div>
+
+  <div class="table-wrap">
+    <table class="stock-table" aria-label="TOP100 랭킹">
+      <thead>
+        <tr>
+          <th class="th-rank">순위</th>
+          <th>종목명</th>
+          <th>현재가</th>
+          <th>등락률</th>
+          <th>시가총액</th>
+          <th>PER</th>
+          <th>PBR</th>
+          <th>ROE</th>
+          <th>배당수익률</th>
+          <th>스코어</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="card-list" id="cardList"></div>
+  <div id="scrollSentinel" class="scroll-sentinel"></div>
+  <div id="loadingIndicator" class="loading-indicator" style="display:none">불러오는 중...</div>
+</main>
+
+<div id="footer-placeholder"></div>
+
+<script src="js/data.js"></script>
+<script src="js/common.js"></script>
+<script src="js/rank.js"></script>
+</body>
+</html>

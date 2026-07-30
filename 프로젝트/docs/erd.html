@@ -1,0 +1,637 @@
+<title>ValuePick ERD — 데이터베이스 원장</title>
+<style>
+  :root{
+    --bg:#e7eee6;
+    --surface:#fbfdfa;
+    --surface-2:#eef3ec;
+    --ink:#16211a;
+    --ink-soft:#4b564d;
+    --ink-faint:#7c8a7e;
+    --line:#cdd8cb;
+    --line-strong:#94a695;
+    --accent:#9c3f2e;
+    --accent-soft:#f2ded8;
+    --zoneA:#a5751f;
+    --zoneA-wash:rgba(165,117,31,.07);
+    --zoneB:#2f5b78;
+    --zoneB-wash:rgba(47,91,120,.07);
+    --zoneC:#7c4f6b;
+    --zoneC-wash:rgba(124,79,107,.07);
+    --zoneD:#5c665e;
+    --zoneD-wash:rgba(92,102,94,.07);
+    --font-display:"Iowan Old Style","Palatino Linotype","Nanum Myeongjo","Noto Serif KR",Georgia,serif;
+    --font-body:"Malgun Gothic","Apple SD Gothic Neo","Segoe UI",sans-serif;
+    --font-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#10150f;
+      --surface:#171d17;
+      --surface-2:#1e251e;
+      --ink:#e7eee5;
+      --ink-soft:#a9b6aa;
+      --ink-faint:#71806f;
+      --line:#2a332a;
+      --line-strong:#465143;
+      --accent:#e37a5f;
+      --accent-soft:#3a251e;
+      --zoneA:#d9a94b;
+      --zoneA-wash:rgba(217,169,75,.09);
+      --zoneB:#75aecf;
+      --zoneB-wash:rgba(117,174,207,.09);
+      --zoneC:#c087ab;
+      --zoneC-wash:rgba(192,135,171,.09);
+      --zoneD:#93a094;
+      --zoneD-wash:rgba(147,160,148,.09);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#10150f; --surface:#171d17; --surface-2:#1e251e;
+    --ink:#e7eee5; --ink-soft:#a9b6aa; --ink-faint:#71806f;
+    --line:#2a332a; --line-strong:#465143;
+    --accent:#e37a5f; --accent-soft:#3a251e;
+    --zoneA:#d9a94b; --zoneA-wash:rgba(217,169,75,.09);
+    --zoneB:#75aecf; --zoneB-wash:rgba(117,174,207,.09);
+    --zoneC:#c087ab; --zoneC-wash:rgba(192,135,171,.09);
+    --zoneD:#93a094; --zoneD-wash:rgba(147,160,148,.09);
+    color-scheme: dark;
+  }
+  :root[data-theme="light"]{
+    --bg:#e7eee6; --surface:#fbfdfa; --surface-2:#eef3ec;
+    --ink:#16211a; --ink-soft:#4b564d; --ink-faint:#7c8a7e;
+    --line:#cdd8cb; --line-strong:#94a695;
+    --accent:#9c3f2e; --accent-soft:#f2ded8;
+    --zoneA:#a5751f; --zoneA-wash:rgba(165,117,31,.07);
+    --zoneB:#2f5b78; --zoneB-wash:rgba(47,91,120,.07);
+    --zoneC:#7c4f6b; --zoneC-wash:rgba(124,79,107,.07);
+    --zoneD:#5c665e; --zoneD-wash:rgba(92,102,94,.07);
+    color-scheme: light;
+  }
+
+  *{box-sizing:border-box;}
+  body{margin:0;}
+  .page{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--font-body);
+    min-height:100%;
+    padding:2.5rem clamp(1rem,4vw,3.5rem) 4rem;
+  }
+
+  .masthead{max-width:52rem;margin:0 0 2.25rem;}
+  .eyebrow{
+    font-family:var(--font-mono);
+    font-size:.72rem;
+    letter-spacing:.14em;
+    color:var(--accent);
+    text-transform:uppercase;
+    margin:0 0 .6rem;
+    font-weight:700;
+  }
+  h1{
+    font-family:var(--font-body);
+    font-size:clamp(1.9rem,3.4vw,2.6rem);
+    font-weight:600;
+    letter-spacing:-.01em;
+    margin:0 0 .55rem;
+    text-wrap:balance;
+  }
+  .dek{
+    font-size:.98rem;
+    line-height:1.65;
+    color:var(--ink-soft);
+    max-width:42rem;
+    margin:0 0 1.4rem;
+  }
+  .dek code{font-family:var(--font-mono);font-size:.87em;background:var(--surface-2);padding:.1em .35em;border-radius:4px;}
+
+  .legend{
+    display:flex;flex-wrap:wrap;gap:.5rem 1.6rem;
+    padding:.9rem 1.1rem;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+    font-size:.8rem;
+    color:var(--ink-soft);
+  }
+  .legend .lg-group{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;}
+  .legend .swatch{width:.62rem;height:.62rem;border-radius:2px;display:inline-block;flex:none;}
+  .legend .mark{font-family:var(--font-mono);color:var(--ink);}
+  .legend .sep{width:1px;align-self:stretch;background:var(--line);margin:0 .2rem;}
+  .legend .hint{font-style:italic;}
+
+  .board{
+    position:relative;
+    margin-top:1.9rem;
+    display:grid;
+    grid-template-columns:1.15fr 1fr;
+    grid-template-areas:
+      "A B"
+      "A C"
+      "D D";
+    gap:1.4rem;
+  }
+  @media (max-width:920px){
+    .board{grid-template-columns:1fr;grid-template-areas:"A" "B" "C" "D";}
+  }
+  .wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:visible;}
+  .rel{
+    stroke:var(--line-strong);
+    stroke-width:1.3;
+    fill:none;
+    opacity:.5;
+    transition:opacity .18s ease, stroke .18s ease, stroke-width .18s ease;
+  }
+  .board.is-focus .rel{opacity:.1;}
+  .board.is-focus .rel.is-lit{opacity:1;stroke:var(--accent);stroke-width:2.1;}
+
+  .zone{position:relative;z-index:1;min-width:0;}
+  .zone[data-zone="A"]{grid-area:A;}
+  .zone[data-zone="B"]{grid-area:B;}
+  .zone[data-zone="C"]{grid-area:C;}
+  .zone[data-zone="D"]{grid-area:D;}
+
+  .zone-head{display:flex;align-items:baseline;gap:.55rem;margin-bottom:.7rem;}
+  .zone-head .dot{width:.55rem;height:.55rem;border-radius:50%;flex:none;}
+  .zone-head h2{
+    font-family:var(--font-body);
+    font-size:.86rem;font-weight:700;letter-spacing:.02em;
+    margin:0;color:var(--ink);
+  }
+  .zone-head .sub{font-size:.74rem;color:var(--ink-faint);}
+
+  .zone[data-zone="D"]{
+    padding-top:1.1rem;
+    border-top:1px dashed var(--line-strong);
+  }
+
+  .cards{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(15.5rem,1fr));
+    gap:.85rem;
+    align-content:start;
+  }
+  .zone[data-zone="D"] .cards{grid-template-columns:repeat(auto-fill,minmax(13.5rem,1fr));}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-left:4px solid var(--zone-color, var(--line-strong));
+    border-radius:6px;
+    padding:.75rem .85rem .55rem;
+    transition:opacity .18s ease, box-shadow .18s ease;
+    cursor:default;
+  }
+  .card:focus{outline:none;}
+  .card:focus-visible{box-shadow:0 0 0 2px var(--accent);}
+  .board.is-focus .card{opacity:.32;}
+  .board.is-focus .card.is-active,
+  .board.is-focus .card.is-related{opacity:1;}
+  .board.is-focus .card.is-active{box-shadow:0 0 0 2px var(--accent);}
+
+  .card-head{
+    display:flex;align-items:baseline;justify-content:space-between;gap:.5rem;
+    margin-bottom:.35rem;
+  }
+  .card-head .name{
+    font-family:var(--font-mono);font-weight:700;font-size:.85rem;
+    letter-spacing:.01em;color:var(--ink);
+  }
+  .card-head .zone-tag{
+    font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--zone-color,var(--ink-faint));font-weight:700;
+  }
+  .caption{
+    font-size:.68rem;color:var(--ink-faint);font-style:italic;
+    margin:-.15rem 0 .45rem;line-height:1.4;
+  }
+
+  .rows{display:flex;flex-direction:column;}
+  .row{
+    display:grid;grid-template-columns:.9rem 1fr auto;column-gap:.4rem;
+    align-items:baseline;
+    padding:.28rem 0;
+    border-bottom:1px solid var(--line);
+    font-size:.76rem;
+  }
+  .row:last-child{border-bottom:none;}
+  .row .mk{font-size:.7rem;text-align:center;color:var(--ink-faint);}
+  .row.is-pk .mk{color:var(--accent);}
+  .row.is-fk .mk{color:var(--zone-color,var(--ink-soft));}
+  .row .colname{font-family:var(--font-mono);color:var(--ink);}
+  .row.is-pk .colname{font-weight:700;}
+  .row .meta{display:flex;align-items:center;justify-content:flex-end;gap:.3rem;grid-column:1 / -1;grid-row:2;padding-top:.15rem;}
+  .row .type{font-family:var(--font-mono);font-size:.68rem;color:var(--ink-faint);}
+  .row-body{display:contents;}
+
+  .pill{
+    font-family:var(--font-body);font-size:.6rem;font-weight:700;
+    letter-spacing:.03em;text-transform:uppercase;
+    padding:.05rem .38rem;border-radius:3px;
+    border:1px solid var(--line-strong);
+    color:var(--ink-soft);white-space:nowrap;
+  }
+  .pill.tone-note{border-color:var(--accent);color:var(--accent);}
+
+  footer.note{
+    max-width:52rem;margin:2.4rem 0 0;
+    font-size:.78rem;color:var(--ink-faint);line-height:1.7;
+    border-top:1px solid var(--line);padding-top:1rem;
+  }
+  footer.note code{font-family:var(--font-mono);}
+
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none !important;}
+  }
+</style>
+
+<div class="page">
+  <header class="masthead">
+    <p class="eyebrow">ValuePick · Schema Ledger</p>
+    <h1>데이터베이스</h1>
+    <br class="dek">
+      <code>domain/entity/*.java</code> <br/> 
+      4가지 영역(종목·시세·재무 / 사용자·인증 / 투자일지 / 독립 테이블)으로 묶었고,
+      테이블에 마우스를 올리거나 포커스를 주면 연결된 관계선이 강조됩니다.
+    </p>
+    <div class="legend">
+      <span class="lg-group"><span class="swatch" style="background:var(--zoneA)"></span>종목·시세·재무</span>
+      <span class="lg-group"><span class="swatch" style="background:var(--zoneB)"></span>사용자·인증</span>
+      <span class="lg-group"><span class="swatch" style="background:var(--zoneC)"></span>투자일지</span>
+      <span class="lg-group"><span class="swatch" style="background:var(--zoneD)"></span>독립 테이블</span>
+      <span class="sep"></span>
+      <span class="lg-group"><span class="mark">●</span> PK · <span class="mark">→</span> FK · <span class="mark">◇</span> UK</span>
+      <span class="lg-group"><span class="pill tone-note">RO</span> 읽기전용 매핑 · <span class="pill tone-note">CASCADE</span> ON DELETE CASCADE</span>
+      <span class="sep"></span>
+      <span class="hint">● 부모 — 삼지창 자식, 선 위 호버로 강조</span>
+    </div>
+  </header>
+
+  <main class="board" id="board">
+    <svg class="wires" id="wires">
+      <defs>
+        <marker id="dot" markerWidth="9" markerHeight="9" refX="4.5" refY="4.5" orient="auto">
+          <circle cx="4.5" cy="4.5" r="3" fill="var(--line-strong)" />
+        </marker>
+        <marker id="dotLit" markerWidth="9" markerHeight="9" refX="4.5" refY="4.5" orient="auto">
+          <circle cx="4.5" cy="4.5" r="3" fill="var(--accent)" />
+        </marker>
+        <marker id="crow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+          <path d="M0,1 L10,6 L0,11 M0,6 L10,6" stroke="var(--line-strong)" stroke-width="1.3" fill="none"/>
+        </marker>
+        <marker id="crowLit" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+          <path d="M0,1 L10,6 L0,11 M0,6 L10,6" stroke="var(--accent)" stroke-width="1.5" fill="none"/>
+        </marker>
+      </defs>
+    </svg>
+  </main>
+
+  <footer class="note">
+    전체 컬럼 설명, FK 제약조건 근거, 도메인별 서술형 설명은 같은 저장소의 <code>ERD.md</code>에 있습니다.
+    이 페이지는 그 내용을 코드 그대로 시각화한 것으로, 별도로 추측하거나 각색한 필드는 없습니다.
+    확인 기준일 2026-07-24.
+  </footer>
+</div>
+
+<script>
+(function(){
+  var ZONES = {
+    A:{title:'종목 · 시세 · 재무', sub:'DART · 공공데이터포털 · KRX', color:'var(--zoneA)'},
+    B:{title:'사용자 · 인증', sub:'회원가입 · 로그인 · 관심종목', color:'var(--zoneB)'},
+    C:{title:'투자일지', sub:'매수 · 매도 · 포지션 기록', color:'var(--zoneC)'},
+    D:{title:'독립 테이블', sub:'다른 엔티티와 JPA 연관관계 없음', color:'var(--zoneD)'}
+  };
+
+  function col(name,type,flags,note,anchorOut,anchorIn){
+    return {name:name,type:type,flags:flags||[],note:note||'',anchorOut:anchorOut||null,anchorIn:anchorIn||null};
+  }
+
+  var TABLES = [
+    {id:'COMPANY', domain:'A', caption:'', columns:[
+      col('stock_code','string',['pk'],'',['company-financial','company-price','company-indicator','company-top100','company-favorite']),
+      col('corp_code','string',['uk'],'',['company-dividend']),
+      col('corp_name','string'),
+      col('corp_cls','string',[],'CHAR(1) · 코스피/코스닥'),
+      col('induty_code','string',[],'DART 표준산업분류코드'),
+      col('induty_nm','string',[],'KSIC 중분류 매핑명'),
+      col('ceo_nm','string'),
+      col('created_at','datetime'),
+      col('updated_at','datetime')
+    ]},
+    {id:'FINANCIAL_STATEMENT', domain:'A', caption:'UK (bsns_year, stock_code, reprt_code, fs_div)', columns:[
+      col('id','long',['pk']),
+      col('bsns_year','string',[],'CHAR(4)'),
+      col('stock_code','string',['fk'],'',null,'company-financial'),
+      col('reprt_code','string',[],'CHAR(5)'),
+      col('fs_div','string',[],'CHAR(3) · CFS/OFS'),
+      col('revenue','long'),
+      col('operating_income','long'),
+      col('net_income','long'),
+      col('total_assets','long'),
+      col('total_liabilities','long'),
+      col('total_equity','long'),
+      col('current_assets','long'),
+      col('current_liabilities','long'),
+      col('operating_cash_flow','long'),
+      col('gross_profit','long'),
+      col('currency','string')
+    ]},
+    {id:'STOCK_PRICE', domain:'A', caption:'PK (srtn_cd, bas_dt)', columns:[
+      col('srtn_cd','string',['pk','fk','ro'],'',null,'company-price'),
+      col('bas_dt','date',['pk']),
+      col('clpr','long'),
+      col('lstg_st_cnt','long'),
+      col('mrkt_tot_amt','long'),
+      col('mkp','long'),
+      col('flt_rt','double'),
+      col('created_at','datetime'),
+      col('updated_at','datetime')
+    ]},
+    {id:'STOCK_INDICATOR', domain:'A', caption:'Company와 1:1, PK 공유', columns:[
+      col('stock_code','string',['pk','fk','ro'],'',null,'company-indicator'),
+      col('per','double'), col('pbr','double'), col('roe','double'),
+      col('debt_ratio','double'), col('dividend_yield','double'),
+      col('eps','double'), col('bps','double'), col('roa','double'),
+      col('momentum','double'), col('f_score','int'),
+      col('eps_growth_rate','double'), col('calculated_at','datetime')
+    ]},
+    {id:'DIVIDEND_INFO', domain:'A', caption:'PK (corp_code, dividend_kind) · corp_code로 Company 참조', columns:[
+      col('corp_code','string',['pk','fk','ro'],'',null,'company-dividend'),
+      col('dividend_kind','string',['pk']),
+      col('dividend_amount','long'),
+      col('stlm_dt','datetime')
+    ]},
+    {id:'TOP100', domain:'A', caption:'PK (base_dt, stock_code)', columns:[
+      col('base_dt','date',['pk']),
+      col('stock_code','string',['pk','fk','ro'],'',null,'company-top100'),
+      col('corp_code','string',[],'비정규화 · FK 아님'),
+      col('score','double')
+    ]},
+    {id:'USER', domain:'B', caption:'', columns:[
+      col('id','long',['pk'],'',['user-favorite','user-journal','user-position','user-buy','user-sell','user-comment']),
+      col('email','string',['uk']),
+      col('password','string'),
+      col('nickname','string'),
+      col('role','string',[],'enum USER/ADMIN'),
+      col('provider','string'), col('provider_id','string'),
+      col('created_at','datetime'), col('updated_at','datetime'),
+      col('deleted_at','datetime',[],'soft delete')
+    ]},
+    {id:'USER_FAVORITE', domain:'B', caption:'PK (user_id, stock_code)', columns:[
+      col('user_id','long',['pk','fk','ro','cascade'],'',null,'user-favorite'),
+      col('stock_code','string',['pk','fk','ro'],'',null,'company-favorite'),
+      col('created_at','datetime'), col('updated_at','datetime')
+    ]},
+    {id:'REFRESH_TOKEN', domain:'B', caption:'User와 JPA 연관관계 없음 · email 문자열로만 매칭', columns:[
+      col('id','long',['pk']),
+      col('email','string',['uk']),
+      col('token','string'),
+      col('expiresAt','datetime')
+    ]},
+    {id:'INVESTMENT_JOURNAL', domain:'C', caption:'', columns:[
+      col('id','long',['pk'],'',['journal-comment']),
+      col('user_id','long',['fk','cascade'],'',null,'user-journal'),
+      col('title','string'), col('content','text'),
+      col('created_at','datetime'), col('updated_at','datetime')
+    ]},
+    {id:'INVESTMENT_POSITION', domain:'C', caption:'', columns:[
+      col('id','long',['pk'],'',['position-buy','position-sell']),
+      col('user_id','long',['fk','cascade'],'',null,'user-position'),
+      col('title','string'),
+      col('stock_code','string',[],'비정규화'),
+      col('corp_name','string',[],'비정규화'),
+      col('first_buy_at','datetime'), col('final_sell_at','datetime'),
+      col('note','text'), col('is_shared','boolean'),
+      col('state','string',[],'enum 보유/완료'), col('created_at','datetime')
+    ]},
+    {id:'INVESTMENT_BUY', domain:'C', caption:'', columns:[
+      col('id','long',['pk']),
+      col('user_id','long',['fk','cascade'],'',null,'user-buy'),
+      col('position_id','long',['fk'],'',null,'position-buy'),
+      col('stock_code','string',[],'비정규화'),
+      col('corp_name','string',[],'비정규화'),
+      col('buy_at','datetime'), col('price','long'), col('quantity','int'),
+      col('is_shared','boolean'), col('created_at','datetime')
+    ]},
+    {id:'INVESTMENT_SELL', domain:'C', caption:'', columns:[
+      col('id','long',['pk']),
+      col('user_id','long',['fk','cascade'],'',null,'user-sell'),
+      col('position_id','long',['fk'],'',null,'position-sell'),
+      col('stock_code','string',[],'비정규화'),
+      col('corp_name','string',[],'비정규화'),
+      col('sell_at','datetime'), col('price','long'), col('quantity','int'),
+      col('is_shared','boolean'), col('created_at','datetime')
+    ]},
+    {id:'COMMENT', domain:'C', caption:'', columns:[
+      col('id','long',['pk']),
+      col('journal_id','long',['fk','cascade'],'',null,'journal-comment'),
+      col('user_id','long',['fk','cascade'],'',null,'user-comment'),
+      col('content','text'), col('created_at','datetime'), col('updated_at','datetime')
+    ]},
+    {id:'EXCHANGE', domain:'D', caption:'', columns:[
+      col('curUnit','string',['pk'],'통화코드'),
+      col('baseDate','date'), col('country','string'),
+      col('dealBasR','double'), col('changeRate','double'), col('changeAmount','double')
+    ]},
+    {id:'MARKET_INDEX', domain:'D', caption:'', columns:[
+      col('id','long',['pk']),
+      col('basDd','date'), col('idxNm','string'), col('flucRt','double'),
+      col('opnprcIdx','double'), col('clsprcIdx','double'),
+      col('cmpprevddIdx','double'), col('mktcap','long')
+    ]},
+    {id:'NEWS', domain:'D', caption:'UK (stock_code, office_id, article_id)', columns:[
+      col('id','long',['pk']),
+      col('stock_code','string',[],'FK 아님 · 순수 문자열'),
+      col('office_id','string'), col('article_id','string'),
+      col('title','string'), col('press','string'), col('link','string'),
+      col('published_at','datetime'), col('created_at','datetime')
+    ]}
+  ];
+
+  var RELATIONS = [
+    {id:'company-financial', from:'COMPANY', to:'FINANCIAL_STATEMENT'},
+    {id:'company-price', from:'COMPANY', to:'STOCK_PRICE'},
+    {id:'company-indicator', from:'COMPANY', to:'STOCK_INDICATOR'},
+    {id:'company-dividend', from:'COMPANY', to:'DIVIDEND_INFO'},
+    {id:'company-top100', from:'COMPANY', to:'TOP100'},
+    {id:'company-favorite', from:'COMPANY', to:'USER_FAVORITE'},
+    {id:'user-favorite', from:'USER', to:'USER_FAVORITE'},
+    {id:'user-journal', from:'USER', to:'INVESTMENT_JOURNAL'},
+    {id:'user-position', from:'USER', to:'INVESTMENT_POSITION'},
+    {id:'user-buy', from:'USER', to:'INVESTMENT_BUY'},
+    {id:'user-sell', from:'USER', to:'INVESTMENT_SELL'},
+    {id:'user-comment', from:'USER', to:'COMMENT'},
+    {id:'journal-comment', from:'INVESTMENT_JOURNAL', to:'COMMENT'},
+    {id:'position-buy', from:'INVESTMENT_POSITION', to:'INVESTMENT_BUY'},
+    {id:'position-sell', from:'INVESTMENT_POSITION', to:'INVESTMENT_SELL'}
+  ];
+
+  var board = document.getElementById('board');
+  var svg = document.getElementById('wires');
+
+  var zoneEls = {};
+  ['A','B','C','D'].forEach(function(key){
+    var z = ZONES[key];
+    var section = document.createElement('section');
+    section.className = 'zone';
+    section.dataset.zone = key;
+    section.style.setProperty('--zone-color', z.color);
+    var head = document.createElement('div');
+    head.className = 'zone-head';
+    head.innerHTML = '<span class="dot" style="background:'+z.color+'"></span><h2>'+z.title+'</h2><span class="sub">— '+z.sub+'</span>';
+    var cards = document.createElement('div');
+    cards.className = 'cards';
+    section.appendChild(head);
+    section.appendChild(cards);
+    board.appendChild(section);
+    zoneEls[key] = cards;
+  });
+
+  function markFor(flags){
+    if(flags.indexOf('pk')>-1) return '●';
+    if(flags.indexOf('fk')>-1) return '→';
+    if(flags.indexOf('uk')>-1) return '◇';
+    return '';
+  }
+
+  TABLES.forEach(function(table){
+    var zone = ZONES[table.domain];
+    var card = document.createElement('article');
+    card.className = 'card';
+    card.id = 'card-'+table.id;
+    card.dataset.id = table.id;
+    card.tabIndex = 0;
+    card.style.setProperty('--zone-color', zone.color);
+
+    var head = document.createElement('div');
+    head.className = 'card-head';
+    head.innerHTML = '<span class="name">'+table.id+'</span><span class="zone-tag">'+table.domain+'</span>';
+    card.appendChild(head);
+
+    if(table.caption){
+      var cap = document.createElement('p');
+      cap.className = 'caption';
+      cap.textContent = table.caption;
+      card.appendChild(cap);
+    }
+
+    var rows = document.createElement('div');
+    rows.className = 'rows';
+    table.columns.forEach(function(c){
+      var row = document.createElement('div');
+      row.className = 'row' + (c.flags.indexOf('pk')>-1?' is-pk':'') + (c.flags.indexOf('fk')>-1?' is-fk':'');
+      if(c.anchorOut) row.setAttribute('data-anchor-out', c.anchorOut.join(' '));
+      if(c.anchorIn) row.setAttribute('data-anchor-in', c.anchorIn);
+
+      var mk = document.createElement('span'); mk.className='mk'; mk.textContent = markFor(c.flags);
+      var name = document.createElement('span'); name.className='colname'; name.textContent = c.name;
+      var meta = document.createElement('span'); meta.className='meta';
+
+      var type = document.createElement('span'); type.className='type'; type.textContent = c.type;
+      meta.appendChild(type);
+
+      c.flags.forEach(function(f){
+        if(f==='pk'||f==='fk'){ return; }
+        var pill = document.createElement('span');
+        pill.className = 'pill' + ((f==='ro'||f==='cascade') ? ' tone-note' : '');
+        pill.textContent = f==='ro' ? 'RO' : f==='cascade' ? 'CASCADE' : f.toUpperCase();
+        if(f==='ro') pill.title = '읽기전용 매핑 (insertable=false, updatable=false)';
+        if(f==='cascade') pill.title = '@OnDelete(CASCADE) — 부모 삭제 시 DB 레벨에서 함께 삭제';
+        meta.appendChild(pill);
+      });
+
+      if(c.note){
+        var noteEl = document.createElement('span');
+        noteEl.className = 'type';
+        noteEl.textContent = c.note;
+        meta.appendChild(noteEl);
+      }
+
+      row.appendChild(mk);
+      row.appendChild(name);
+      row.appendChild(meta);
+      rows.appendChild(row);
+    });
+    card.appendChild(rows);
+    zoneEls[table.domain].appendChild(card);
+
+    function focus(on){ setFocus(table.id, on); }
+    card.addEventListener('mouseenter', function(){ focus(true); });
+    card.addEventListener('mouseleave', function(){ focus(false); });
+    card.addEventListener('focus', function(){ focus(true); });
+    card.addEventListener('blur', function(){ focus(false); });
+  });
+
+  function setFocus(tableId, on){
+    board.classList.toggle('is-focus', on);
+    document.querySelectorAll('.card').forEach(function(c){
+      var active = c.dataset.id === tableId;
+      var related = RELATIONS.some(function(r){
+        return (r.from===tableId && r.to===c.dataset.id) || (r.to===tableId && r.from===c.dataset.id);
+      });
+      c.classList.toggle('is-active', on && active);
+      c.classList.toggle('is-related', on && related);
+    });
+    document.querySelectorAll('.rel').forEach(function(p){
+      var lit = p.dataset.from===tableId || p.dataset.to===tableId;
+      p.classList.toggle('is-lit', on && lit);
+      p.setAttribute('marker-start', (on&&lit)?'url(#dotLit)':'url(#dot)');
+      p.setAttribute('marker-end', (on&&lit)?'url(#crowLit)':'url(#crow)');
+    });
+  }
+
+  function layoutWires(){
+    var boardRect = board.getBoundingClientRect();
+    svg.setAttribute('width', boardRect.width);
+    svg.setAttribute('height', boardRect.height);
+    svg.setAttribute('viewBox', '0 0 '+boardRect.width+' '+boardRect.height);
+
+    var existing = svg.querySelectorAll('path.rel');
+    existing.forEach(function(p){ p.remove(); });
+
+    RELATIONS.forEach(function(rel){
+      var outEl = document.querySelector('[data-anchor-out~="'+rel.id+'"]');
+      var inEl = document.querySelector('[data-anchor-in="'+rel.id+'"]');
+      if(!outEl || !inEl) return;
+
+      var oR = outEl.getBoundingClientRect();
+      var iR = inEl.getBoundingClientRect();
+      var oCenterX = oR.left + oR.width/2;
+      var iCenterX = iR.left + iR.width/2;
+
+      var ox, ix;
+      if(oCenterX <= iCenterX){ ox = oR.right; ix = iR.left; }
+      else { ox = oR.left; ix = iR.right; }
+
+      var oy = oR.top + oR.height/2 - boardRect.top;
+      var iy = iR.top + iR.height/2 - boardRect.top;
+      ox -= boardRect.left; ix -= boardRect.left;
+
+      var dx = Math.max(50, Math.abs(ix-ox)/2);
+      var dir = ox<=ix ? 1 : -1;
+      var c1x = ox + dir*dx, c1y = oy;
+      var c2x = ix - dir*dx, c2y = iy;
+
+      var path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('class','rel');
+      path.setAttribute('data-from', rel.from);
+      path.setAttribute('data-to', rel.to);
+      path.setAttribute('marker-start','url(#dot)');
+      path.setAttribute('marker-end','url(#crow)');
+      path.setAttribute('d', 'M '+ox+' '+oy+' C '+c1x+' '+c1y+' '+c2x+' '+c2y+' '+ix+' '+iy);
+      svg.appendChild(path);
+    });
+  }
+
+  function debounce(fn, ms){
+    var t;
+    return function(){ clearTimeout(t); t=setTimeout(fn, ms); };
+  }
+
+  window.requestAnimationFrame(function(){ window.requestAnimationFrame(layoutWires); });
+  window.addEventListener('resize', debounce(layoutWires, 150));
+  if(document.fonts && document.fonts.ready){ document.fonts.ready.then(layoutWires); }
+})();
+</script>

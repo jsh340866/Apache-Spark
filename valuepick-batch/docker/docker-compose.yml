@@ -1,0 +1,121 @@
+# valuepick-batch Spark 클러스터 구성
+# 목적: 전략 그리드(500~2,000개) x 전체 종목(2,500개) x 리밸런싱 시점 조합을 병렬 처리하기 위한 분산 환경
+# 워커 2대: 워커 1대 -> 2대 스케일링 시 처리시간 감소폭을 실측해 docs/PERFORMANCE.md 근거자료로 사용
+services:
+
+  # 클러스터 마스터 - 잡 스케줄링과 워커 리소스(코어/메모리) 배분 담당
+  spark-master:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-master
+    user: root
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+      --host spark-master --port 7077 --webui-port 8080
+    environment:
+      - DART_API_KEY=${DART_API_KEY}
+      - STOCK_API_KEY=${STOCK_API_KEY}
+      - EXIM_API_KEY=${EXIM_API_KEY}
+    ports:
+      - "7077:7077"   # 워커/드라이버가 접속하는 마스터 RPC 포트
+      - "8088:8080"   # Spark 마스터 웹 UI (클러스터 상태, 워커 목록, 등록된 애플리케이션 확인)
+                       # 호스트 포트만 8088로 분리 (8080은 기존 ValuePick(Spring Boot) 백엔드가 사용 중)
+      - "4040:4040"   # Spark 애플리케이션(드라이버) UI - 잡 실행 중일 때만 뜸. spark-submit을 spark-master 컨테이너에서 실행하므로 드라이버가 여기서 뜸.
+                       # 스테이지/태스크 진행상황, DAG, 셔플량 등 "작업 모니터링"은 이 포트에서 확인
+    volumes:
+      - ../jobs:/opt/spark-apps/jobs           # 잡 스크립트 (01~05)
+      - ../conf:/opt/spark-apps/conf           # strategies.yaml, spark-defaults.conf
+      - ../data:/opt/spark-apps/data           # Parquet 데이터 레이크 (raw/cleaned/indicators/backtest_results)
+    networks:
+      - spark-net
+
+  # 연산 수행 노드 1 - 실제 태스크(파티션 단위 작업)를 실행하는 주체
+  spark-worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-worker-1
+    user: root
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077 --cores 2 --memory 2G --webui-port 8081
+    ports:
+      - "8081:8081"   # 워커 1 UI - 이 워커가 실행 중인 executor/태스크 로그 확인
+    depends_on:
+      - spark-master
+    volumes:
+      - ../jobs:/opt/spark-apps/jobs
+      - ../conf:/opt/spark-apps/conf
+      - ../data:/opt/spark-apps/data
+    networks:
+      - spark-net
+
+  # 연산 수행 노드 2 - worker-1과 동일 스펙, 스케일링 효율 비교를 위해 존재
+  spark-worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-worker-2
+    user: root
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077 --cores 2 --memory 2G --webui-port 8082
+    ports:
+      - "8082:8082"   # 워커 2 UI (worker-1과 호스트 포트 충돌 방지 위해 8082 사용)
+    depends_on:
+      - spark-master
+    volumes:
+      - ../jobs:/opt/spark-apps/jobs
+      - ../conf:/opt/spark-apps/conf
+      - ../data:/opt/spark-apps/data
+    networks:
+      - spark-net
+
+  # 개발/검증용 대화형 환경 - PySpark 커널로 03단계 지표 검증 노트북 등을 실행
+  jupyter:
+    image: jupyter/pyspark-notebook:spark-3.5.0
+    container_name: valuepick-jupyter
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      # 파일탐색기 루트를 /opt/spark-apps로 지정 (기본 루트 /home/jovyan/work 밖이라 안 보이던 문제 해결)
+      - NOTEBOOK_ARGS=--ServerApp.root_dir=/opt/spark-apps
+    working_dir: /opt/spark-apps
+    ports:
+      - "8888:8888"
+      - "4041:4040"   # Jupyter 노트북에서 SparkSession을 직접 만들면 드라이버가 이 컨테이너 안에서 뜬다.
+                       # spark-master의 4040과 호스트 포트가 겹치므로 4041로 분리 (배치 잡은 4040, 노트북은 4041)
+    depends_on:
+      - spark-master
+    volumes:
+      # master/worker와 동일한 절대경로(/opt/spark-apps/...)로 통일.
+      # Spark Standalone 클러스터는 모든 노드가 동일 경로에서 파일을 볼 수 있어야 하므로
+      # (분산 파일시스템이 없는 로컬 개발 환경에서는 bind mount 경로 자체를 맞춰서 흉내낸다),
+      # jupyter만 다른 경로(/home/jovyan/work/data)를 쓰면 클러스터 모드에서 워커가 파일을 못 찾는다.
+      - ../jobs:/opt/spark-apps/jobs
+      - ../conf:/opt/spark-apps/conf
+      - ../data:/opt/spark-apps/data
+      - ../notebooks:/opt/spark-apps/notebooks
+    networks:
+      - spark-net
+
+  # 최종 백테스트 결과 서빙 전용 - 원천/중간 데이터는 절대 여기 저장하지 않음 (전부 Parquet)
+  mysql:
+    image: mysql:8.0
+    container_name: valuepick-batch-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=valuepick_backtest
+    ports:
+      - "3307:3306"   # 기존 ValuePick MySQL(3306)과 충돌 방지를 위해 호스트 포트만 3307로 분리
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - spark-net
+
+networks:
+  spark-net:
+    driver: bridge
+
+volumes:
+  mysql-data:

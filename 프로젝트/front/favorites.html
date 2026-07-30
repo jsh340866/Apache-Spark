@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>관심종목 — ValuePick</title>
+  <link rel="stylesheet" href="css/common.css" />
+  <link rel="stylesheet" href="css/list.css" />
+  <link rel="stylesheet" href="css/favorites.css" />
+</head>
+<body>
+
+<div id="header-placeholder"></div>
+
+<main class="main">
+  <div class="page-header">
+    <h1>관심종목</h1>
+    <p id="stockCount">불러오는 중...</p>
+  </div>
+
+  <div class="table-wrap">
+    <table class="stock-table" aria-label="관심종목 목록">
+      <thead>
+        <tr>
+          <th class="th-favorite"></th>
+          <th>종목명</th>
+          <th>현재가</th>
+          <th>등락률</th>
+          <th>시가총액</th>
+          <th>PER</th>
+          <th>PBR</th>
+          <th>ROE</th>
+          <th>배당수익률</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="card-list" id="cardList"></div>
+</main>
+
+<div id="footer-placeholder"></div>
+
+<script src="js/data.js"></script>
+<script src="js/common.js"></script>
+<script src="js/favorites.js"></script>
+</body>
+</html>

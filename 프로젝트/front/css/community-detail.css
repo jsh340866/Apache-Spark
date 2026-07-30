@@ -1,0 +1,149 @@
+.back-link {
+  display: inline-block;
+  margin-bottom: 14px;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.post-detail,
+.discussion-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+.post-detail {
+  margin-bottom: 16px;
+}
+
+.post-detail h1 {
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+
+.meta {
+  color: var(--text-sub);
+  margin-bottom: 12px;
+}
+
+.post-body {
+  white-space: pre-wrap;
+}
+
+.discussion-panel {
+  margin-bottom: 16px;
+}
+
+.discussion-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.discussion-head select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.stream-form {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.stream-form textarea {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.stream-list {
+  display: grid;
+  gap: 10px;
+  max-height: 520px;
+  overflow: auto;
+}
+
+.stream-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.stream-item .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-sub);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.attachment {
+  margin-top: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text-sub);
+}
+
+.stream-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.btn-delete-stream {
+  border: 1px solid #ffd0d5;
+  background: #fff5f6;
+  color: #d92d20;
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stream-comments {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.inline-comment-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.inline-comment-form textarea {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.inline-comment-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.comment-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #fafbfc;
+}
+
+.comment-item .row {
+  color: var(--text-sub);
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.hidden {
+  display: none;
+}

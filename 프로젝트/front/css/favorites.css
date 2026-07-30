@@ -1,0 +1,16 @@
+/* favorites.css — 관심종목 페이지 (list.css의 테이블/카드 반응형 레이아웃을 그대로 재사용) */
+
+.th-favorite {
+  width: 40px;
+}
+
+.td-favorite {
+  position: relative;
+  width: 40px;
+  text-align: center !important;
+}
+
+.td-favorite .favorite-btn {
+  position: static;
+  font-size: 18px;
+}

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>투자일지 — ValuePick</title>
+  <link rel="stylesheet" href="css/common.css" />
+  <link rel="stylesheet" href="css/investment-journal.css" />
+</head>
+<body>
+<div id="header-placeholder"></div>
+
+<main class="main">
+  <section class="page-head">
+    <div>
+      <h1>투자일지</h1>
+      <p>내 투자 기록을 저장하세요.</p>
+    </div>
+    <button class="btn-primary" id="openJournalModal" type="button">종목 추가</button>
+  </section>
+
+  <section class="toolbar">
+    <div class="tabs" id="categoryTabs">
+      <button class="tab active" data-category="all" type="button">전체</button>
+      <button class="tab" data-category="hold" type="button">보유</button>
+      <button class="tab" data-category="deal" type="button">거래완료</button>
+      <button class="tab" data-category="buy" type="button">매수</button>
+      <button class="tab" data-category="sell" type="button">매도</button>
+    </div>
+    <div class="search-box">
+      <input id="journalSearchInput" type="text" placeholder="종목명, 제목, 메모 검색" aria-label="투자일지 검색" />
+    </div>
+  </section>
+
+  <section class="date-filter-bar">
+    <label>
+      시작일
+      <input type="date" id="filterFromDate" />
+    </label>
+    <span class="date-filter-sep">~</span>
+    <label>
+      종료일
+      <input type="date" id="filterToDate" />
+    </label>
+    <p class="date-filter-hint">매수는 매수일, 매도는 매도일, 보유·거래완료는 최종 매도일 기준으로 필터링됩니다.</p>
+  </section>
+
+  <div class="table-wrap">
+    <table class="journal-table" aria-label="투자일지 목록">
+      <thead>
+        <tr id="journalTableHeadRow"></tr>
+      </thead>
+      <tbody id="journalTableBody"></tbody>
+    </table>
+  </div>
+
+  <section id="journalList" class="journal-list"></section>
+
+  <div class="pagination" id="journalPagination"></div>
+</main>
+
+<div class="modal-backdrop" id="journalModal" aria-hidden="true">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>종목 추가</h2>
+      <button class="icon-btn" id="closeJournalModal" type="button" aria-label="모달 닫기">×</button>
+    </div>
+    <form id="journalForm" class="modal-form" novalidate>
+      <div class="form-grid">
+        <label>
+          제목
+          <input name="title" type="text" required />
+        </label>
+        <label>
+          종목명
+          <div class="stock-input-row">
+            <input id="stockNameInput" name="stockName" type="text" placeholder="종목명 입력 후 검색" required />
+            <button class="btn-outline" id="openStockSearchBtn" type="button">검색</button>
+          </div>
+          <input id="stockCodeInput" name="stockCode" type="hidden" />
+        </label>
+        <label>
+          매수 일시
+          <input id="buyDateInput" name="buyAt" type="datetime-local" required />
+        </label>
+        <label>
+          매수 당시 주가 (원)
+          <input name="price" type="number" min="0" step="1000" required />
+        </label>
+        <label>
+          매수 수량
+          <input name="quantity" type="number" min="1" step="1" required />
+        </label>
+        <label>
+          현재 주가
+          <div id="currentPriceDisplay" class="price-display">종목 선택 시 표시됩니다.</div>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="btn-text" id="cancelJournal" type="button">취소</button>
+        <button class="btn-primary" type="submit">종목 추가</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="journalActionModal" aria-hidden="true">
+  <div class="modal">
+    <div class="modal-head">
+      <button class="icon-btn" id="detailBackBtn" type="button" aria-label="뒤로" style="display:none">←</button>
+      <div class="detail-title-edit">
+        <input id="detailTitleInput" type="text" class="detail-title-input" />
+        <button class="btn-outline" id="detailTitleSaveBtn" type="button">저장</button>
+      </div>
+      <button class="icon-btn" id="closeActionModal" type="button" aria-label="모달 닫기">×</button>
+    </div>
+    <div class="action-body">
+      <div id="actionMeta" class="action-detail"></div>
+      <div class="action-buttons">
+        <button class="btn-outline" id="openBuyFormBtn" type="button">매수</button>
+        <button class="btn-outline" id="openSellFormBtn" type="button">매도</button>
+        <button class="btn-danger" id="deleteJournalBtn" type="button">삭제</button>
+      </div>
+      <form id="addBuyForm" class="sell-form hidden" novalidate>
+        <h3>매수 등록</h3>
+        <div class="form-grid">
+          <label>
+            매수 일시
+            <input type="datetime-local" name="addBuyAt" required />
+          </label>
+          <label>
+            매수 수량
+            <input type="number" name="addBuyQuantity" min="1" step="1" required />
+          </label>
+          <label>
+            매수 당시 주가 (원)
+            <input type="number" name="addBuyPrice" min="0" step="1000" required />
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="btn-text" id="cancelAddBuyBtn" type="button">취소</button>
+          <button class="btn-primary" type="submit">매수 완료</button>
+        </div>
+      </form>
+      <form id="sellForm" class="sell-form hidden" novalidate>
+        <h3>매도 등록</h3>
+        <div class="form-grid">
+          <label>
+            매도 일시
+            <input type="datetime-local" name="sellAt" required />
+          </label>
+          <label>
+            매도 수량
+            <input type="number" name="sellQuantity" min="1" step="1" required />
+          </label>
+          <label>
+            매도 당시 주가 (원)
+            <input type="number" name="sellPrice" min="0" step="1000" required />
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="btn-text" id="cancelSellBtn" type="button">취소</button>
+          <button class="btn-primary" type="submit">매도 완료</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="stockSearchModal" aria-hidden="true">
+  <div class="modal stock-search-modal">
+    <div class="modal-head">
+      <h2>회사 검색</h2>
+      <button class="icon-btn" id="closeStockSearchModal" type="button" aria-label="모달 닫기">×</button>
+    </div>
+    <div class="action-body">
+      <div class="search-inline">
+        <input id="stockSearchKeyword" type="text" placeholder="회사명/종목코드 검색" />
+      </div>
+      <div id="stockSearchList" class="stock-search-list"></div>
+    </div>
+  </div>
+</div>
+
+<div id="footer-placeholder"></div>
+
+<script src="js/data.js"></script>
+<script src="js/common.js"></script>
+<script src="js/investment-journal.js"></script>
+</body>
+</html>

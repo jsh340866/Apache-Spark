@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ValuePick — 가치투자 발굴 서비스</title>
+  <link rel="stylesheet" href="css/common.css" />
+  <link rel="stylesheet" href="css/home.css" />
+</head>
+<body>
+
+<div id="header-placeholder"></div>
+
+<main class="main">
+  <section class="hero" aria-label="서비스 소개">
+    <div class="hero-dots" aria-hidden="true"></div>
+
+    <svg class="hero-decor" viewBox="0 0 520 340" fill="none" aria-hidden="true">
+      <circle cx="420" cy="170" r="220" stroke="white" stroke-opacity="0.06" stroke-width="1" />
+      <circle cx="420" cy="170" r="155" stroke="white" stroke-opacity="0.06" stroke-width="1" />
+      <circle cx="420" cy="170" r="90"  stroke="white" stroke-opacity="0.08" stroke-width="1" />
+
+      <path d="M 420 80 A 90 90 0 1 1 330 200" stroke="white" stroke-opacity="0.15" stroke-width="6" stroke-linecap="round" fill="none" />
+      <path d="M 420 80 A 90 90 0 0 1 500 210" stroke="white" stroke-opacity="0.5" stroke-width="6" stroke-linecap="round" fill="none" />
+      <circle cx="500" cy="210" r="5" fill="white" fill-opacity="0.8" />
+      <text x="420" y="178" text-anchor="middle" fill="white" fill-opacity="0.9" font-size="28" font-weight="800">82</text>
+      <text x="420" y="196" text-anchor="middle" fill="white" fill-opacity="0.5" font-size="10">F-Score</text>
+
+      <g>
+        <rect x="170" y="110" width="20" height="100" rx="3" fill="white" fill-opacity="0.08" />
+        <rect x="170" y="110" width="20" height="35"  rx="3" fill="white" fill-opacity="0.25" />
+      </g>
+      <g>
+        <rect x="204" y="80" width="20" height="130" rx="3" fill="white" fill-opacity="0.11" />
+        <rect x="204" y="80" width="20" height="46"  rx="3" fill="white" fill-opacity="0.29" />
+      </g>
+      <g>
+        <rect x="238" y="50" width="20" height="160" rx="3" fill="white" fill-opacity="0.14" />
+        <rect x="238" y="50" width="20" height="56"  rx="3" fill="white" fill-opacity="0.33" />
+      </g>
+      <g>
+        <rect x="272" y="65" width="20" height="145" rx="3" fill="white" fill-opacity="0.17" />
+        <rect x="272" y="65" width="20" height="51"  rx="3" fill="white" fill-opacity="0.37" />
+      </g>
+      <g>
+        <rect x="306" y="35" width="20" height="175" rx="3" fill="white" fill-opacity="0.2" />
+        <rect x="306" y="35" width="20" height="61"  rx="3" fill="white" fill-opacity="0.41" />
+      </g>
+      <g>
+        <rect x="340" y="20" width="20" height="190" rx="3" fill="white" fill-opacity="0.23" />
+        <rect x="340" y="20" width="20" height="66"  rx="3" fill="white" fill-opacity="0.45" />
+      </g>
+
+      <polyline points="170,200 204,170 238,140 272,155 306,118 340,100"
+        stroke="white" stroke-opacity="0.6" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" fill="none" />
+      <circle cx="170" cy="200" r="3.5" fill="white" fill-opacity="0.7" />
+      <circle cx="204" cy="170" r="3.5" fill="white" fill-opacity="0.7" />
+      <circle cx="238" cy="140" r="3.5" fill="white" fill-opacity="0.7" />
+      <circle cx="272" cy="155" r="3.5" fill="white" fill-opacity="0.7" />
+      <circle cx="306" cy="118" r="3.5" fill="white" fill-opacity="0.7" />
+      <circle cx="340" cy="100" r="3.5" fill="white" fill-opacity="0.7" />
+    </svg>
+
+    <div class="hero-content">
+      <div class="hero-badge">
+        <span class="hero-badge-dot"></span>
+        <span>DART · KRX · 공공데이터 매일 자동 수집</span>
+      </div>
+
+      <h1>재무데이터로 발굴하는<br /><span class="hero-highlight">숨겨진 가치주</span></h1>
+
+      <p>PER · PBR · ROE · Piotroski F-Score를 다팩터 가중 스코어링해<br class="hero-break" />저평가 우량주 TOP 100을 매일 자동으로 추천합니다.</p>
+
+      <div class="hero-features">
+        <div class="hero-feature">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+          </svg>
+          <div class="hero-feature-title">재무 스크리닝</div>
+          <div class="hero-feature-desc">PER·PBR·ROE·F-Score 기반 종목 필터링</div>
+        </div>
+        <div class="hero-feature">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/>
+          </svg>
+          <div class="hero-feature-title">우량주 TOP 100</div>
+          <div class="hero-feature-desc">다팩터 스코어로 매일 자동 랭킹 산출</div>
+        </div>
+        <div class="hero-feature">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>
+          </svg>
+          <div class="hero-feature-title">개인 투자일지</div>
+          <div class="hero-feature-desc">매수·매도 기록 및 손익 관리</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="market-section" aria-label="시장 지표">
+    <h2 class="section-title">시장 지표</h2>
+    <div class="market-grid" id="marketGrid"></div>
+  </section>
+
+  <section class="stocks-section" aria-label="주요 종목">
+    <div class="section-header">
+      <h2 class="section-title">TOP10</h2>
+      <a class="section-more" href="rank.html">더보기+</a>
+    </div>
+    <div class="stocks-grid" id="stocksGrid"></div>
+  </section>
+
+  <section class="ranking-section" id="ranking" aria-label="랭킹">
+    <h2 class="section-title">가치투자 랭킹</h2>
+    <div class="ranking-grid">
+      <div id="rankPer"></div>
+      <div id="rankPbr"></div>
+      <div id="rankRoe"></div>
+      <div id="rankDiv"></div>
+    </div>
+  </section>
+</main>
+
+<div id="footer-placeholder"></div>
+
+<script src="js/data.js"></script>
+<script src="js/common.js"></script>
+<script src="js/home.js"></script>
+</body>
+</html>

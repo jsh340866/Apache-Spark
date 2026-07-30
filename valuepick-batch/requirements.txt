@@ -1,0 +1,4 @@
+# 01_ingest_raw.py 실행 환경 (Docker jupyter 이미지에는 pyspark가 이미 포함되어 있어 requests만 추가로 필요)
+pyspark==3.5.0
+requests==2.32.3
+PyYAML==6.0.2

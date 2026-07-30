@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>커뮤니티 — ValuePick</title>
+  <link rel="stylesheet" href="css/common.css" />
+  <link rel="stylesheet" href="css/community.css" />
+</head>
+<body>
+<div id="header-placeholder"></div>
+
+<main class="main">
+  <section class="page-head">
+    <div>
+      <h1>커뮤니티</h1>
+      <p>자유, 토론, 공유 투자일지를 한 곳에서 확인하세요.</p>
+    </div>
+    <button class="btn-primary" id="openPostModal" type="button">글 작성</button>
+  </section>
+
+  <section class="toolbar">
+    <div class="tabs" id="communityTabs">
+      <button class="tab active" data-tab="free" type="button">자유</button>
+      <button class="tab" data-tab="discussion" type="button">토론</button>
+      <button class="tab" data-tab="journal" type="button">투자일지</button>
+    </div>
+    <input id="communitySearchInput" type="text" placeholder="제목/내용/작성자 검색" aria-label="커뮤니티 검색" />
+  </section>
+
+  <section id="communityList" class="community-list"></section>
+</main>
+
+<div class="modal-backdrop" id="postModal" aria-hidden="true">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>커뮤니티 글 작성</h2>
+      <button class="icon-btn" id="closePostModal" type="button" aria-label="모달 닫기">×</button>
+    </div>
+    <form id="postForm" class="modal-form">
+      <label>
+        탭
+        <select name="tab" required>
+          <option value="free">자유</option>
+          <option value="discussion">토론</option>
+        </select>
+      </label>
+      <label id="stockField" class="hidden">
+        종목명
+        <input name="stockName" type="text" placeholder="예: 삼성전자" />
+      </label>
+      <label>
+        제목
+        <input name="title" type="text" required />
+      </label>
+      <label>
+        내용
+        <textarea name="content" rows="6" required></textarea>
+      </label>
+      <div class="form-actions">
+        <button class="btn-text" id="cancelPost" type="button">취소</button>
+        <button class="btn-primary" type="submit">등록</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="journalDetailModal" aria-hidden="true">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="journalDetailTitle">공유 투자일지</h2>
+      <button class="icon-btn" id="closeJournalDetailModal" type="button" aria-label="모달 닫기">×</button>
+    </div>
+    <div class="action-body" id="journalDetailBody"></div>
+  </div>
+</div>
+
+<div id="footer-placeholder"></div>
+
+<script src="js/common.js"></script>
+<script src="js/community.js"></script>
+</body>
+</html>

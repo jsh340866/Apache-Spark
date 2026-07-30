@@ -1,0 +1,12 @@
+# apache/spark:3.5.0 기반 + 잡 스크립트가 필요로 하는 파이썬 패키지 사전 설치.
+# 컨테이너 재생성(docker compose up) 시마다 pip install을 수동으로 반복하지 않기 위함
+# (bind mount는 코드/데이터만 유지하고 pip로 설치한 패키지는 컨테이너 재생성 시 초기화되므로,
+#  패키지 설치는 이미지 빌드 단계에 포함시켜야 재생성 후에도 유지된다).
+FROM apache/spark:3.5.0
+
+USER root
+# requirements.txt와 동일 버전 유지 (04_backtest_grid.py에서 conf/strategies.yaml 파싱 시 PyYAML 필요)
+RUN pip install --no-cache-dir requests==2.32.3 PyYAML==6.0.2
+
+# 05_export_to_mysql.py의 JDBC writer 및 verify_indicators 검증용 ValuePick DB 역주입에 필요
+ADD https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/8.3.0/mysql-connector-j-8.3.0.jar /opt/spark/jars/mysql-connector-j-8.3.0.jar

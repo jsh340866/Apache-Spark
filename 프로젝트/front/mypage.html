@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>마이페이지 — ValuePick</title>
+  <link rel="stylesheet" href="css/common.css" />
+  <link rel="stylesheet" href="css/mypage.css" />
+</head>
+<body data-page="mypage">
+
+<div id="header-placeholder"></div>
+
+<main class="mypage-wrap">
+  <div class="mypage-inner">
+
+    <!-- 사이드바 -->
+    <aside class="mypage-sidebar">
+      <div class="profile-card">
+        <div class="profile-avatar" id="profileAvatar"></div>
+        <div class="profile-info">
+          <div class="profile-nickname" id="profileNickname">불러오는 중...</div>
+          <div class="profile-email" id="profileEmail"></div>
+          <div class="profile-since" id="profileSince"></div>
+        </div>
+      </div>
+
+      <nav class="side-nav">
+        <div class="side-nav-group">
+          <div class="side-nav-label">내 활동</div>
+          <button class="side-nav-item active" data-menu="watchlist">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            관심종목
+          </button>
+          <button class="side-nav-item" data-menu="journal">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            투자일지
+          </button>
+        </div>
+        <div class="side-nav-divider"></div>
+        <div class="side-nav-group">
+          <div class="side-nav-label">계정 설정</div>
+          <button class="side-nav-item" data-menu="profile">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            프로필 수정
+          </button>
+          <button class="side-nav-item" data-menu="password">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            비밀번호 변경
+          </button>
+        </div>
+        <div class="side-nav-divider"></div>
+        <button class="side-nav-item" id="logoutSideBtn">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          로그아웃
+        </button>
+        <button class="side-nav-item danger" id="withdrawBtn">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+          회원탈퇴
+        </button>
+      </nav>
+    </aside>
+
+    <!-- 콘텐츠 -->
+    <div class="mypage-content">
+
+      <!-- 관심종목 -->
+      <section class="content-card" id="section-watchlist">
+        <div class="content-card-header">
+          <h2 class="content-card-title">관심종목</h2>
+          <a class="btn-more" href="favorites.html">전체보기 →</a>
+        </div>
+        <div class="empty-state" id="watchlist-empty" style="display:none">
+          <p>등록된 관심종목이 없습니다.</p>
+        </div>
+        <table class="mypage-table" id="watchlist-table" style="display:none">
+          <thead>
+            <tr><th></th><th>종목명</th><th>현재가</th><th>등락률</th></tr>
+          </thead>
+          <tbody id="watchlist-tbody"></tbody>
+        </table>
+      </section>
+
+      <!-- 투자일지 -->
+      <section class="content-card" id="section-journal" style="display:none">
+        <div class="content-card-header">
+          <h2 class="content-card-title">투자일지 <span class="section-sub">보유종목</span></h2>
+          <a class="btn-more" href="investment-journal.html">전체보기 →</a>
+        </div>
+        <div class="empty-state" id="journal-empty" style="display:none">
+          <p>보유 중인 종목이 없습니다.</p>
+        </div>
+        <table class="mypage-table" id="journal-table" style="display:none">
+          <thead>
+            <tr><th>종목명</th><th>보유주</th><th>현재가</th><th>손익</th></tr>
+          </thead>
+          <tbody id="journal-tbody"></tbody>
+        </table>
+      </section>
+
+      <!-- 프로필 수정 -->
+      <section class="content-card" id="section-profile" style="display:none">
+        <div class="content-card-header">
+          <h2 class="content-card-title">프로필 수정</h2>
+        </div>
+        <div class="alert" id="profileAlert" role="alert">
+          <span class="alert-message" id="profileAlertMsg"></span>
+          <button class="alert-confirm" onclick="hideAlert('profileAlert')">확인</button>
+        </div>
+        <form class="settings-form" id="profileForm">
+          <div class="form-group">
+            <label class="form-label">닉네임</label>
+            <input class="form-input" type="text" id="nicknameInput" maxlength="20" placeholder="닉네임 입력" />
+            <span class="form-hint" id="nicknameCount">0/20자</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">이메일</label>
+            <input class="form-input" type="text" id="emailInput" disabled />
+            <span class="form-hint">이메일은 변경할 수 없습니다.</span>
+          </div>
+          <button class="btn-save" type="submit" id="profileSaveBtn">저장</button>
+        </form>
+      </section>
+
+      <!-- 비밀번호 변경 -->
+      <section class="content-card" id="section-password" style="display:none">
+        <div class="content-card-header">
+          <h2 class="content-card-title">비밀번호 변경</h2>
+        </div>
+        <div class="alert" id="passwordAlert" role="alert">
+          <span class="alert-message" id="passwordAlertMsg"></span>
+          <button class="alert-confirm" onclick="hideAlert('passwordAlert')">확인</button>
+        </div>
+        <form class="settings-form" id="passwordForm">
+          <div class="form-group">
+            <label class="form-label">현재 비밀번호</label>
+            <input class="form-input" type="password" id="currentPassword" placeholder="현재 비밀번호 입력" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">새 비밀번호</label>
+            <input class="form-input" type="password" id="newPassword" placeholder="영문+숫자 조합 8자 이상" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">새 비밀번호 확인</label>
+            <input class="form-input" type="password" id="confirmPassword" placeholder="새 비밀번호 재입력" />
+            <span class="form-error" id="confirmError"></span>
+          </div>
+          <button class="btn-save" type="submit" id="passwordSaveBtn">변경</button>
+        </form>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<!-- 회원탈퇴 확인 모달 -->
+<div class="modal-overlay" id="withdrawModal" style="display:none">
+  <div class="modal">
+    <div class="modal-icon danger">
+      <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+    </div>
+    <h2 class="modal-title">정말 탈퇴하시겠어요?</h2>
+    <p class="modal-desc">탈퇴 시 관심종목, 투자일지 등<br>모든 데이터가 영구적으로 삭제됩니다.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="withdrawCancelBtn">취소</button>
+      <button class="btn-danger" id="withdrawConfirmBtn">탈퇴하기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 회원탈퇴 완료 메시지 -->
+<div class="modal-overlay" id="withdrawDoneMsg" style="display:none">
+  <div class="modal">
+    <div class="modal-icon">
+      <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+    </div>
+    <h2 class="modal-title">탈퇴가 완료되었습니다</h2>
+    <p class="modal-desc">그동안 ValuePick을 이용해 주셔서 감사합니다.<br>잠시 후 메인 페이지로 이동합니다.</p>
+  </div>
+</div>
+
+<div id="footer-placeholder"></div>
+
+<script src="js/data.js"></script>
+<script src="js/common.js"></script>
+<script src="js/mypage.js"></script>
+</body>
+</html>

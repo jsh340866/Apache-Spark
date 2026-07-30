@@ -1,0 +1,15 @@
+# 로컬 개발용 - SSL/도메인 인증서 없이 HTTP(80)만 서빙
+FROM nginx:alpine
+
+COPY . /usr/share/nginx/html
+COPY nginx-local.conf /etc/nginx/nginx.conf
+
+# 웹 루트로 함께 복사된 nginx 설정/Dockerfile은 정적 파일로 노출되지 않도록 제거
+RUN rm -f /usr/share/nginx/html/nginx.conf \
+          /usr/share/nginx/html/nginx-local.conf \
+          /usr/share/nginx/html/Dockerfile \
+          /usr/share/nginx/html/Dockerfile.local
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
