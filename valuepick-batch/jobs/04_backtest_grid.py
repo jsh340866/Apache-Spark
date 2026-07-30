@@ -43,6 +43,10 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
+# 03_build_indicators.py의 MAX_VALID_DIVIDEND_YIELD와 동일 - 시점별 배당수익률 재계산에도
+# 같은 이상치 기준(공시 오류로 비정상적으로 큰 배당수익률 제외)을 적용해야 하므로 값을 복제한다.
+MAX_VALID_DIVIDEND_YIELD = 100.0
+
 
 def load_strategies(spark: SparkSession, path: str) -> DataFrame:
     """conf/strategies.yaml을 읽어 Spark DataFrame으로 변환 (전략 수만큼의 작은 테이블)"""
@@ -78,8 +82,11 @@ def build_rebalance_dates(years: list[str], rebalance: str) -> list[str]:
 
 
 def prices_at_dates(prices: DataFrame, rebalance_dates: list[str]) -> DataFrame:
-    """각 리밸런싱 시점에 대해 종목별 "그 날짜 이하 가장 최근 거래일" 종가를 구한다.
-    말일이 휴일이면 그 이전 거래일 종가를 쓰기 위해 날짜별로 필터+윈도우 처리한다."""
+    """각 리밸런싱 시점에 대해 종목별 "그 날짜 이하 가장 최근 거래일" 종가/상장주식수를 구한다.
+    말일이 휴일이면 그 이전 거래일 값을 쓰기 위해 날짜별로 필터+윈도우 처리한다.
+    listed_share_count도 함께 가져오는 이유: screen_portfolio가 그 시점 가격으로 PER/PBR/배당수익률을
+    직접 재계산하려면 그 시점의 상장주식수(eps_t/bps_t의 분모)도 함께 필요하다(룩어헤드 바이어스 수정).
+    윈도우 _rank==1 필터로 (stock_code, rebalance_date)당 정확히 1행만 남으므로 fan-out 없음."""
     current = prices.filter(F.col("snapshot_type") == "current")
     results = []
     for rebalance_date in rebalance_dates:
@@ -88,6 +95,7 @@ def prices_at_dates(prices: DataFrame, rebalance_dates: list[str]) -> DataFrame:
             .withColumn("_rank", F.row_number().over(w)) \
             .filter(F.col("_rank") == 1) \
             .select("stock_code", F.col("close_price").alias("price"),
+                    F.col("listed_share_count").alias("share_count_t"),
                     F.lit(rebalance_date).alias("rebalance_date"))
         results.append(snapshot)
     out = results[0]
@@ -105,24 +113,68 @@ def latest_valid_indicators(indicators: DataFrame, rebalance_date: str) -> DataF
     return eligible.withColumn("_rank", F.row_number().over(w)).filter(F.col("_rank") == 1).drop("_rank")
 
 
-def screen_portfolio(indicators: DataFrame, strategies: DataFrame, rebalance_date: str) -> DataFrame:
-    """리밸런싱 시점 하나에 대해, 전략별로 조건을 만족하는 종목 중 PER 낮은 순 상위 portfolio_size종목 선정."""
+def compute_point_in_time_ratios(df: DataFrame) -> DataFrame:
+    """리밸런싱 시점 t의 가격(price)/상장주식수(share_count_t)로 PER/PBR/배당수익률을 직접 계산한다.
+    03_build_indicators.py의 calculate_core_ratios/join_dividend_yield가 "최신" 가격 하나로 고정
+    계산해버리는 룩어헤드 바이어스를 피하기 위해, 03번이 넘겨준 재무 원본(net_income_krw/equity_krw/
+    dividend_amount)에 시점별 가격을 조인해 여기서 다시 계산한다. 03번의 가드를 그대로 복제해 의미를
+    보존한다 (eps>0일 때만 PER, equity_krw>0 & bps!=0일 때만 PBR, share_count_t!=0 체크,
+    price!=0 & dividend_amount not null일 때만 배당수익률, 배당수익률 100% 초과는 공시 오류로 제외)."""
+    df = df.withColumn(
+        "eps_t",
+        F.when(F.col("share_count_t") != 0, F.col("net_income_krw") / F.col("share_count_t")),
+    )
+    df = df.withColumn(
+        "bps_t",
+        F.when((F.col("equity_krw") > 0) & (F.col("share_count_t") != 0),
+               F.col("equity_krw") / F.col("share_count_t")),
+    )
+    df = df.withColumn(
+        "per_t",
+        F.when(F.col("eps_t") > 0, F.col("price") / F.col("eps_t")),
+    )
+    df = df.withColumn(
+        "pbr_t",
+        F.when((F.col("equity_krw") > 0) & (F.col("bps_t") != 0), F.col("price") / F.col("bps_t")),
+    )
+    df = df.withColumn(
+        "dividend_yield_t",
+        F.when((F.col("price") != 0) & F.col("dividend_amount").isNotNull(),
+               F.col("dividend_amount") / F.col("price") * 100),
+    )
+    df = df.withColumn(
+        "dividend_yield_t",
+        F.when(F.col("dividend_yield_t") <= MAX_VALID_DIVIDEND_YIELD, F.col("dividend_yield_t")),
+    )
+    return df
+
+
+def screen_portfolio(indicators: DataFrame, prices_snapshot: DataFrame, strategies: DataFrame,
+                      rebalance_date: str) -> DataFrame:
+    """리밸런싱 시점 하나에 대해, 전략별로 조건을 만족하는 종목 중 PER 낮은 순 상위 portfolio_size종목 선정.
+    prices_snapshot은 이미 이 rebalance_date로 필터된 (stock_code당 1행) 가격 스냅샷이어야 한다."""
     ind = latest_valid_indicators(indicators, rebalance_date)
 
+    # 가격 조인은 crossJoin(전략 테이블) 이전에 수행 - 전략 수(1,000)만큼 행이 불어나기 전에
+    # 종목 수 규모(수천 행)에서 끝내는 것이 훨씬 저렴하다. inner join: 그 시점 가격이 없는 종목은
+    # 애초에 매매 불가하므로 스크리닝 대상에서 자연히 제외된다.
+    ind_priced = ind.join(prices_snapshot, on="stock_code", how="inner")
+    ind_priced = compute_point_in_time_ratios(ind_priced)
+
     # 전략 수 x 종목 수 조합 생성 (작은 전략 테이블을 브로드캐스트해 셔플 최소화)
-    joined = ind.crossJoin(F.broadcast(strategies))
+    joined = ind_priced.crossJoin(F.broadcast(strategies))
 
     condition = (
-        (F.col("per") > 0) & (F.col("per") <= F.col("per_max"))
-        & (F.col("pbr") > 0) & (F.col("pbr") <= F.col("pbr_max"))
+        (F.col("per_t") > 0) & (F.col("per_t") <= F.col("per_max"))
+        & (F.col("pbr_t") > 0) & (F.col("pbr_t") <= F.col("pbr_max"))
         & (
             F.col("dividend_yield_min").isNull()
-            | (F.col("dividend_yield").isNotNull() & (F.col("dividend_yield") >= F.col("dividend_yield_min")))
+            | (F.col("dividend_yield_t").isNotNull() & (F.col("dividend_yield_t") >= F.col("dividend_yield_min")))
         )
     )
     eligible = joined.filter(condition)
 
-    w = Window.partitionBy("name").orderBy(F.col("per").asc())
+    w = Window.partitionBy("name").orderBy(F.col("per_t").asc())
     ranked = eligible.withColumn("rank", F.row_number().over(w))
     selected = ranked.filter(F.col("rank") <= F.col("portfolio_size"))
 
@@ -167,15 +219,28 @@ def summarize_performance(period_returns: DataFrame) -> DataFrame:
         "cum_return",
         F.exp(F.sum(F.log(F.col("period_return") + 1.0)).over(w)) - 1.0,
     )
+    # 자산곡선의 시작점(투자 직후, 누적수익률 0%)도 고점 후보에 포함해야 한다. max(cum_return)만 쓰면
+    # 첫 구간부터 하락한 전략의 running_peak이 그 음수값이 되어 첫 구간 낙폭이 MDD에서 통째로 빠진다
+    # (예: 첫 구간 -20% -> peak=-0.2, drawdown=0으로 계산됨). greatest(..., 0.0)로 하한을 0에 건다.
     with_peak = with_cum.withColumn(
-        "running_peak", F.max("cum_return").over(w.rowsBetween(Window.unboundedPreceding, 0))
+        "running_peak",
+        F.greatest(F.max("cum_return").over(w.rowsBetween(Window.unboundedPreceding, 0)), F.lit(0.0)),
     )
     with_drawdown = with_peak.withColumn(
         "drawdown", (F.col("cum_return") - F.col("running_peak")) / (F.col("running_peak") + 1.0)
     )
 
-    summary = with_drawdown.groupBy("name").agg(
-        F.last("cum_return").alias("final_cum_return"),
+    # 전략별 "마지막 구간"의 누적수익률을 결정적으로 뽑는다.
+    # groupBy().agg(F.last(...))는 셔플 이후의 행 순서에 의존하는 비결정적 함수라, 앞에서 윈도우로
+    # 정렬했더라도 마지막 구간 값이 나온다는 보장이 없다(03_build_indicators.py에서 F.first()의 같은
+    # 순서 의존성 때문에 자본총계가 잘못 채택된 사례를 이미 겪었다). orderBy와 프레임을 명시한 윈도우
+    # 위에서의 F.last()는 순서가 정의되어 있어 안전하므로, 마지막 행 값을 그룹 전체 행에 채운 뒤
+    # 집계한다. 그룹 내에서 상수이므로 F.max()로 꺼내도 값이 달라지지 않는다.
+    w_full = w.rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
+    with_final = with_drawdown.withColumn("final_cum_return", F.last("cum_return").over(w_full))
+
+    summary = with_final.groupBy("name").agg(
+        F.max("final_cum_return").alias("final_cum_return"),
         F.min("drawdown").alias("mdd"),
         F.avg("period_return").alias("avg_period_return"),
         F.stddev("period_return").alias("stddev_period_return"),
@@ -201,7 +266,10 @@ def run_for_rebalance_group(indicators: DataFrame, prices: DataFrame, strategies
 
     portfolio_results = []
     for rebalance_date in rebalance_dates[:-1]:
-        portfolio = screen_portfolio(indicators, group_strategies, rebalance_date)
+        # prices_by_date는 이미 캐시된 상태이므로 시점별 필터는 추가 스캔 없이 캐시에서 처리된다.
+        # screen_portfolio 내부에서 crossJoin(전략) 이전에 이 (stock_code당 1행) 스냅샷과 조인한다.
+        date_prices = prices_by_date.filter(F.col("rebalance_date") == rebalance_date)
+        portfolio = screen_portfolio(indicators, date_prices, group_strategies, rebalance_date)
         portfolio_results.append(portfolio)
     portfolios = portfolio_results[0]
     for p in portfolio_results[1:]:

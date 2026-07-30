@@ -441,6 +441,7 @@ def main():
         "stock_code", "year", "fs_div", "currency", "rcept_no",
         "eps", "bps", "per", "pbr", "roe", "debt_ratio", "dividend_yield", "roa",
         "momentum", "f_score", "eps_growth_rate",
+        "net_income_krw", "equity_krw", "dividend_amount",
     )
 
     result.write.mode("overwrite").partitionBy("year").parquet(args.output_dir)
