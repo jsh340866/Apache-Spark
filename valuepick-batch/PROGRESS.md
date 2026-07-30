@@ -1,6 +1,6 @@
 # 작업 진행 체크리스트 (2026-07-30 기준)
 
-새 세션에서 이어서 작업할 때 참고. 전체 설계 원본은 `../.claude/spark프로젝트/PROJECT_INSTRUCTIONS.md`.
+새 세션에서 이어서 작업할 때 참고. 전체 설계 원본은 `../spark프로젝트/PROJECT_INSTRUCTIONS.md`.
 
 ## 완료
 
@@ -56,7 +56,7 @@
 - [x] ValuePick 로컬 DB 역주입 후 `/admin/indicator/calculate` API로 Java 실제 계산값과 대조
 - [x] 79종목 중 78종목 8개 지표(EPS/BPS/PER/PBR/ROE/부채비율/배당수익률/ROA) 완전 일치, 1종목 PER 반올림 오차(0.08) 확인
 - [x] `pivot_financials` 버그 발견/수정: `ifrs-full_Equity`가 BS/SCE 양쪽에 중복 등장해 `F.first()` 순서 비의존적으로 만들기 위해 sj_div 필터링 적용
-- 상세 내용: `../.claude/spark프로젝트/작업요약_Spark배치_01-03구현및검증_20260729.md` 참고
+- 상세 내용: `../spark프로젝트/작업요약_Spark배치_01-03구현및검증_20260729.md` 참고
 
 ### conf/strategies.yaml
 - [x] `conf/generate_strategies.py` — PER 5 x PBR 5 x 배당수익률 4 x 리밸런싱주기 2 x 보유종목수 5 = 1,000개 조합 자동 생성

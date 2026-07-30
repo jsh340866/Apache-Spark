@@ -1,6 +1,6 @@
 # valuepick-batch
 
-Spark 기반 가치투자 백테스팅 파이프라인. 상세 설계는 [PROJECT_INSTRUCTIONS.md](../.claude/spark프로젝트/PROJECT_INSTRUCTIONS.md) 참고.
+Spark 기반 가치투자 백테스팅 파이프라인. 상세 설계는 [PROJECT_INSTRUCTIONS.md](../spark프로젝트/PROJECT_INSTRUCTIONS.md) 참고.
 
 **절대 원칙**: 기존 `ValuePick`(Spring Boot, MySQL)의 프로덕션 코드·스케줄러·DB를 건드리지 않는 완전히 분리된 리포.
 

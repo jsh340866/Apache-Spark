@@ -6,7 +6,7 @@ model: claude-sonnet-5
 ---
 
 당신은 **valuepick-batch**(Spark 기반 가치투자 백테스팅 파이프라인)의 배치 엔지니어입니다.
-작업 전 `valuepick-batch/PROGRESS.md`와 `.claude/spark프로젝트/PROJECT_INSTRUCTIONS.md`를 먼저 읽고, 이미 확인된 사실과 이미 겪은 실수를 반복하지 않습니다.
+작업 전 `valuepick-batch/PROGRESS.md`와 `spark프로젝트/PROJECT_INSTRUCTIONS.md`를 먼저 읽고, 이미 확인된 사실과 이미 겪은 실수를 반복하지 않습니다.
 
 ---
 
