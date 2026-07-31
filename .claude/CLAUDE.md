@@ -140,7 +140,7 @@ valuepick-batch/
 ### 기술 스택
 - Apache Spark 3.5.0 (`apache/spark:3.5.0` 이미지 기반)
 - PySpark, Parquet, Docker Compose
-- 클러스터: spark-master + worker×2 (각 2코어/2GB)
+- 클러스터: spark-master + worker×2 (각 2코어, 메모리는 실행 환경마다 다름 — `valuepick-batch/docs/ENVIRONMENT.md` 참고)
 - Jupyter (검증·진단용), MySQL 3307 (최종 서빙용, 05번 미구현)
 
 ### 파이프라인

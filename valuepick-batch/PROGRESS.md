@@ -1,6 +1,12 @@
-# 작업 진행 체크리스트 (2026-07-30 기준)
+# 작업 진행 체크리스트 (2026-07-31 갱신)
 
 새 세션에서 이어서 작업할 때 참고. 전체 설계 원본은 `../spark프로젝트/PROJECT_INSTRUCTIONS.md`.
+
+**[최우선] 다음 세션은 ValuePick 가치주 점수 전환 작업부터.** 상세 계획:
+`docs/PLAN_가치주점수_전환_20260731.md`. 04번을 지금의 PER/PBR/배당 문턱값 그리드에서
+기존 ValuePick(`Top100Service.scoreAll()`)과 동일한 7팩터 백분위 가중합산 점수 기반으로
+전환한다 — 지금까지 04번으로 찾은 "최선의 조합"은 ValuePick 실제 추천 로직과 무관한
+별개 실험이었다는 게 2026-07-31 세션 말미에 확인됨.
 
 ## 완료
 
@@ -60,7 +66,7 @@
 
 ### conf/strategies.yaml
 - [x] `conf/generate_strategies.py` — PER 5 x PBR 5 x 배당수익률 4 x 리밸런싱주기 2 x 보유종목수 5 = 1,000개 조합 자동 생성
-- [x] 파라미터 범위: PER(8/10/12/15/20), PBR(0.8/1.0/1.2/1.5/2.0), 배당수익률하한(null/1.0/2.0/3.0), 주기(monthly/quarterly), 보유종목수(10/20/30/50/100)
+- [x] 파라미터 범위(07-31 기준 최신): PER(8/10/12/15/20), PBR(0.8/1.0/1.2/1.5/2.0), 배당수익률하한(null/1.0/2.0/3.0), 주기(monthly/quarterly), 보유종목수(10/30/50/**300**) — 보유종목수 20은 300으로 교체됨(9999 시도 시 OOM 발생해 300으로 타협, `conf/generate_strategies.py` 주석 참고)
 
 ### jobs/04_backtest_grid.py
 - [x] `conf/strategies.yaml` 1,000개 전략 × 리밸런싱 시점별 스크리닝 → 구간 수익률 → 누적수익률/MDD/샤프비율 요약 파이프라인 구현
@@ -98,38 +104,99 @@
 - [ ] 7. `jobs/05_export_to_mysql.py` — Spark JDBC writer로 `backtest_results`, `strategy_performance` 테이블 upsert
 - [ ] 8. `docs/PERFORMANCE.md`, `docs/ARCHITECTURE.md`, `docs/VALIDATION.md` — 진행하면서 계속 갱신 (마지막에 몰아쓰지 않기)
 
-## 미해결 코드 이슈 (2026-07-30 코드 리뷰에서 발견, 아직 안 고침)
+## 해결된 이슈 (07-30에 발견, 07-30~07-31에 수정 완료)
 
-### [심각] 03번 PER/PBR에 룩어헤드 바이어스
-`main()`이 `prices_current`를 연도 필터 없이 `join_latest_price`에 넘기는데, 이 함수는 데이터셋 **전체에서 가장 최근 bas_dt** 하나를 고른다. 즉 `--year 2021`로 실행해도 `per`/`pbr`이 **2023-12 종가**로 계산되고, 04번은 이 값으로 2021년 시점 스크리닝을 한다. `rcept_no <= rebalance_date`가 재무제표 쪽 미래 정보는 막았지만 **비율의 분자인 가격은 안 막혀 있다.**
+### [해결] 03번 PER/PBR 룩어헤드 바이어스
+07-30에 발견했던 대로 확정된 버그였음. **07-30 저녁에 수정 완료**: 03번은 `eps`/`bps`/
+`net_income_krw`/`equity_krw`/`dividend_amount` 원본만 내보내고, 04번의
+`compute_point_in_time_ratios()`가 각 리밸런싱 시점의 실제 종가로 `per_t`/`pbr_t`/
+`dividend_yield_t`를 매번 다시 계산하도록 재작성함. 03번이 여전히 계산해서 내보내는
+`per`/`pbr` 컬럼은 최신가 고정값(룩어헤드됨)이라 **`verify_indicators.ipynb` 대조검증용으로만
+의도적으로 유지**, 04번은 이 컬럼을 쓰지 않는다.
 
-- "PER 낮은 순 상위 N"이 실질적으로 "2023-12 기준으로 싼 종목"(= 3년간 많이 떨어질 종목)을 2021년에 매수하는 셈이 됨
-- 1,000개 전략 평균 -48%가 전체 종목 중앙값 -21.8%보다 훨씬 나빴던 것과 방향이 맞음 — **다만 인과관계는 가설이고 실측 검증 필요**
-- verify_indicators에서 안 걸린 이유: Java도 최신가를 쓰므로(실시간 서비스로는 맞는 동작) 대조하면 당연히 일치함
-- 03번 docstring "한계" 목록에 모멘텀 기준일 얘기는 있으나 PER/PBR 가격 기준일 얘기는 빠져 있음
-- 2023년 단일 연도만 있을 때는 정상이었다가 다년치 확장으로 드러난 것 — fan-out 버그와 발생 조건이 동일
-- **수정 방향(설계 변경)**: 03번은 `eps`/`bps`만 내보내고, 04번이 리밸런싱 시점 종가로 `per = price/eps`, `pbr = price/bps`를 직접 계산. 이래야 "가격은 매월 재평가"가 스크리닝에도 실제로 적용됨. 03→04 전체 재실행 및 결과 재해석 필요
+### [해결] 04번이 02번의 split_suspected 플래그를 전혀 안 읽던 문제
+2026-07-31 세션에서 최종 확정: 02번의 `flag_split_suspects()`는 종목 101140의 2023-10-23
+급등(467원→9,340원, +1900%)을 **정확히 탐지**했다(하루 등락률 기준이라 정상 탐지). 문제는
+04번이 `split_suspected` 컬럼을 **한 번도 참조하지 않았던 것** — 탐지는 됐지만 필터링에
+연결이 안 된 상태로 방치돼 있었다. `calculate_period_returns()`에 `split_flags` 파라미터를
+추가해 보유 구간 안에 플래그가 있는 종목의 수익률을 그 구간에서 제외하도록 수정, 실측 검증
+완료(n30 이상 100개 전략, 1,650개 (전략,구간) 조합에서 값 변경 확인). 상세: 아래 04번 섹션.
 
-### [중간] 04번이 02번의 플래그를 전혀 사용하지 않음
-`is_interpolated` / `split_suspected`를 04번이 한 번도 읽지 않는다.
+## 07-31 세션 핵심 작업: 04번 계획 트리(Plan Tree) 폭발 해결 + 이상치 수정
 
-- 02번이 전 종목 × 전 거래일 격자를 forward-fill하므로 **상장폐지 종목도 마지막 가격이 끝까지 유지**됨. 04번은 "rebalance_date 이하 최신 bas_dt"를 쓰므로 상폐 종목을 그 가격으로 계속 보유한 것으로 계산 → **상폐 손실이 수익률 0%로 기록**됨
-- 종목 101140 건: 02번은 `lag` 기준 **일별** 판정이라 급등일에는 `split_suspected`가 True로 찍혔을 가능성이 큼. 04번은 월말 시점만 보고 구간 사이 플래그를 확인하지 않음 → "02번 탐지가 놓쳤다"보다 **"04번이 플래그를 안 읽는다"** 쪽이 원인일 수 있음. 코드만으로는 단정 불가, 실측 확인 필요
+전 세션(07-30 밤~07-31 새벽)에서 04번이 3연속 OOM으로 실패한 뒤, 07-31 세션(학원→집 컴퓨터
+이전 직후)에서 진짜 원인을 찾아 해결했다. 상세 경위는
+`../spark프로젝트/작업요약_04번계획트리해결및이상치수정_20260731.md` 참고.
+
+### 원인: 시점별 반복 union이 실행계획을 초선형으로 키움
+`run_for_rebalance_group()`의 파이썬 for문이 리밸런싱 시점마다(monthly 36개, quarterly 12개)
+`screen_portfolio()`를 반복 호출해 `unionByName`으로 이어붙이는 구조였음. 매 union마다
+Catalyst 옵티마이저가 전체 트리를 재분석해 계획이 시점 수보다 빠르게(초선형) 커짐(실측:
+시점 1개→12개, 계획 32,218자→1,010,833자, 정비례 대비 2.6배). 이 비용은 드라이버 혼자
+부담 — 실제 재현 시 드라이버 `-Xmx4g`인데 5.04GB 사용, CPU 611%(GC만 도는 상태), 워커는
+2.5GB/3GB로 놀고 있었음(실행 단계까지 못 감).
+
+### 해결: prices_at_dates / latest_valid_indicators+screen_portfolio / calculate_period_returns 벡터화
+시점(날짜) 목록을 파이썬 for문이 아니라 `spark.createDataFrame`으로 만들어 `crossJoin` 한
+번으로 처리하도록 재작성. `Window.partitionBy`에 `rebalance_date`를 반드시 포함해야
+서로 다른 시점 종목이 한 랭킹에 섞이지 않는다. 벡터화 후 계획 길이는 시점 6.5배 늘려도
+3.5%만 증가(32배 증가 대비 결정적 개선). 각 함수 벡터화 시 기존 로직을 복제한 대조 스크립트로
+행 수·값 완전 대조 검증(`logs/verify_*.py` — 코드 자체는 커밋 대상으로 남겨둠, 재사용 가능).
+
+**검증 중 발견한 부수 버그**: `latest_valid_indicators`의 `orderBy(desc(rcept_no))`가 동순위
+문제를 안고 있었음(같은 rcept_no에 당기/전기/전전기 3개년치가 응답에 함께 와 (stock_code,
+rcept_no) 조합이 최대 3행 중복, 530개 조합 확인) — `orderBy(desc(rcept_no), desc(year))`로
+타이브레이커 추가해 해결.
+
+### 04번 재실행 성공 (07-31, 벡터화+이상치 제외 반영 후)
+`--output-dir`을 `data/backtest_results_kospi_n300`으로 신규 분리(기존 `backtest_results/`,
+`backtest_results_kospi_2w/`는 07-30 15:44 시점 산출물이라 룩어헤드 미수정 구버전 — **더 이상
+참조하지 말 것**, PROGRESS.md의 옛 성과 수치(+72.6%, -48% 등)는 전부 이 구버전에서 나온 값).
+
+**소요시간 1분 7초, 에러 없음.** 이상치(101140) 제외 반영 전/후 비교:
+
+| | 이상치 포함 | 이상치 제외(현재) |
+|---|---|---|
+| n10 최고 누적수익률 | +193.2% | **+32.7%** |
+| 상위권 성격 | `dynone`(배당조건 없음) 위주 | `dy1.0/2.0/3.0`(배당조건 있음) 위주 |
+
+이상치 제외 반영 후 전체 1,000개 전략 중 최고 성과: `per20_pbr1.2_dy3.0_monthly_n300`
+(+58.7%, 샤프비율 0.228로 전체 1위). 배당수익률 하한을 높일수록, n을 늘릴수록(분산 효과)
+단조롭게 성과가 좋아지는 패턴 확인. **단, 이건 PER/PBR/배당 문턱값 그리드 안에서의 최선일
+뿐 ValuePick 실제 추천 로직과는 무관 — 위 "가치주 점수 전환" 계획 참고.**
+
+### History Server 도입 (실패 원인 규명 인프라)
+전 세션 "실패해도 로그가 사라져서 원인 파악 불가"를 막기 위해 추가.
+`docker-compose.yml`에 `spark-history` 서비스(18080 포트), `spark.eventLog.enabled=true` +
+`spark.eventLog.dir`을 마운트된 `logs/events`로 설정(컨테이너 재생성해도 로그 보존).
+`spark-submit` stdout은 `logs/*.log`로 저장(gitignore 대상, 재생성 가능).
+
+## 미해결 코드 이슈
 
 ### [낮음]
-- `04:168` `F.log(period_return + 1.0)` — `period_return <= -1`이면 NaN이 되어 해당 전략의 이후 누적이 전부 오염
-- `01:287` `companies`만 `mode("overwrite")` + `partitionBy("bas_dt")`(static) — 다른 `--bas-dt`로 재실행하면 이전 파티션이 지워짐. prices/financials/dividends는 전부 `append`인데 여기만 다름
-- `03:248` `bps`에 `share_count != 0` 체크 없음(`eps`에는 있음). Spark가 null을 반환해 크래시는 나지 않음
+- `04_backtest_grid.py:301` `F.log(period_return + 1.0)` — `period_return <= -1`이면 NaN이 되어 해당 전략의 이후 누적이 전부 오염
+- `01_ingest_raw.py:299` `companies`만 `mode("overwrite")` + `partitionBy("bas_dt")`(static) — 다른 `--bas-dt`로 재실행하면 이전 파티션이 지워짐. prices/financials/dividends는 전부 `append`인데 여기만 다름
+- `03_build_indicators.py:248` `bps`에 `share_count != 0` 체크 없음(`eps`에는 있음). Spark가 null을 반환해 크래시는 나지 않음
+
+### [해결, 07-31] `pivot_financials`의 currency F.first() 비결정성
+`(stock_code, fs_div, year)` 그룹 안에서 서로 다른 `rcept_no`(정정공시 등)가 서로 다른
+표시통화를 쓰는 실제 사례 확인(예: 950190이 2018~2021은 HKD, 2022~2023은 USD). 기존 코드는
+`earliest_rcept` 결정과 무관하게 `currency`만 따로 `F.first(ignorenulls=True)`로 뽑아
+rcept_no와 currency가 다른 공시 출처에서 올 수 있었음. `earliest_rcept`로 결정된 그 rcept_no에
+실제로 달린 currency를 조인해 가져오도록 수정, fan-out 없음(13,879행 유지) 검증 완료.
+**03번 재실행은 아직 안 함 — 다음 세션에서 재실행 후 indicators 재검증 필요.**
 
 ## 다음 세션에서 이어갈 것
 
-0. **04번 재실행 후 성과 수치 재확인** — `final_cum_return` 비결정성/MDD 시작점 수정이 기존 결과(예: KOSPI 최고 +72.6%, monthly -64.6%)를 얼마나 바꾸는지 대조
-1. **03번 PER/PBR 룩어헤드 실측 검증** — `indicators`의 `per`이 year=2021/2022/2023에서 종목별로 동일한 값인지 확인(동일하면 위 "미해결 코드 이슈" 확정). 확정 시 수정 범위 결정
-2. `check_04_02_backtest.ipynb` 최종 디버깅 완료 (벡터화 버전 실행 검증)
-3. 종목 `101140`의 `split_suspected`가 급등일에 True로 찍혔는지 일별 조회 — 04번이 플래그를 안 읽는 게 원인인지 확인
-4. 워커 2대 vs 4대 성능 벤치마크 재시도 (메모리 배분 재계산 후)
-5. `conf/strategies.yaml`에 n=ALL 전략 영구 추가 여부 결정
-6. `jobs/05_export_to_mysql.py`, `docs/` 3종 작성
+0. **[최우선] ValuePick 가치주 점수 전환** — `docs/PLAN_가치주점수_전환_20260731.md` 1단계부터
+1. **03번 재실행** — currency 버그 수정 반영 (03→04 전체 재실행 필요, indicators 캐시가 낡음)
+2. **배당 조건 전략(750개)의 2021/2022 선별 결과 검증** — 0건이면 버그 신호 (04번 docstring의
+   "2021/2022 dividend_yield 전부 null" 서술이 거짓임을 07-31에 실측 확인, docstring은 수정
+   완료했으나 실제 백테스트 결과 검증은 미완)
+3. 04번 ALL 시장 실행 (KOSPI만 하고 ALL은 아직 안 함)
+4. 워커 2대 vs 4대 성능 벤치마크 (여전히 미착수 — 가치주 점수 전환으로 그리드가 훨씬 작아지면
+   벤치마크 의미도 재검토 필요)
+5. `jobs/05_export_to_mysql.py`, `docs/` 3종(PERFORMANCE/ARCHITECTURE/VALIDATION) 작성
 
 ## 운영상 유의사항 (실측으로 확인된 것만)
 

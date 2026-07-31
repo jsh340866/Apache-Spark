@@ -8,8 +8,16 @@ itertools.product로 전체 조합 생성해 strategies.yaml로 저장한다.
 from __future__ import annotations
 
 import itertools
+from pathlib import Path
 
 import yaml
+
+# 2026-07-31 실측: docker exec spark-master python3 conf/generate_strategies.py처럼
+# docker exec의 기본 작업 디렉토리(/opt/spark/work-dir)에서 실행하면 상대경로 "strategies.yaml"이
+# 스크립트 옆이 아니라 그 작업 디렉토리에 저장돼, 04번이 읽는 파일은 그대로 옛 값으로 남는 사고가
+# 있었다("저장 완료" 로그를 두 번 봤는데도 실제로는 반영이 안 됐던 원인). 스크립트 파일 위치
+# 기준 절대경로로 고정해 실행 위치와 무관하게 항상 같은 곳에 쓰도록 한다.
+STRATEGIES_PATH = Path(__file__).resolve().parent / "strategies.yaml"
 
 PER_MAX = [8, 10, 12, 15, 20]
 PBR_MAX = [0.8, 1.0, 1.2, 1.5, 2.0]
@@ -48,9 +56,9 @@ def main():
     strategies = build_strategies()
     print(f"생성된 전략 조합 수: {len(strategies)}")
 
-    with open("strategies.yaml", "w", encoding="utf-8") as f:
+    with open(STRATEGIES_PATH, "w", encoding="utf-8") as f:
         yaml.dump({"strategies": strategies}, f, allow_unicode=True, sort_keys=False)
-    print("conf/strategies.yaml 저장 완료")
+    print(f"저장 완료: {STRATEGIES_PATH}")
 
 
 if __name__ == "__main__":
