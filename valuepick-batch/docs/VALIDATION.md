@@ -1,0 +1,138 @@
+# VALIDATION.md — 검증 이력
+
+이 문서는 valuepick-batch 각 잡의 산출물을 어떻게 검증했는지, 검증 과정에서 어떤 버그를
+발견하고 고쳤는지를 시간순으로 정리한다. 구조 설명은 `ARCHITECTURE.md`, 성능 수치는
+`PERFORMANCE.md` 참고.
+
+## 왜 검증이 필요했는가
+
+이 파이프라인은 두 종류의 위험을 항상 안고 있다. 하나는 Spark 분산 처리 특유의
+**비결정성** — `groupBy().agg()`에서 `F.first()`/`F.last()`를 orderBy 없이 쓰면 셔플 이후
+행 순서에 결과가 좌우된다. 다른 하나는 백테스트 고유의 **룩어헤드 바이어스** — 리밸런싱
+시점 이후에 공시된 재무 데이터가 스크리닝에 섞여 들어가면 실제로는 그 시점에 알 수 없었던
+정보로 투자 판단을 한 셈이 된다. 아래 이력은 대부분 이 두 위험 중 하나를 실측으로 확인하고
+고친 기록이다.
+
+## 03번 지표 계산 검증 (2026-07-29)
+
+`notebooks/verify_indicators.ipynb`에서 ValuePick 로컬 DB에 데이터를 역주입한 뒤
+`/admin/indicator/calculate` API로 Java 실제 계산값과 대조했다.
+
+- 79종목 중 78종목이 8개 지표(EPS/BPS/PER/PBR/ROE/부채비율/배당수익률/ROA) 완전 일치
+- 1종목은 PER 반올림 오차 0.08 확인(오차 원인은 반올림 자릿수 처리 차이로 추정, 계산 로직
+  자체의 불일치는 아님)
+
+## 분산 처리 환경에서 F.first()/F.last() 순서 비의존성 — 같은 원인의 버그 3건
+
+이 리포에서 groupBy 집계에 `F.first()`/`F.last()`를 orderBy 없이 쓰다가 발생한 버그가
+3회 반복됐다. 셋 다 근본 원인은 같다: **Spark의 셔플은 행 순서를 보장하지 않으므로,
+정렬 기준이 명시되지 않은 `F.first()`/`F.last()`는 실행할 때마다 다른 값을 고를 수 있다.**
+
+1. **03번 `pivot_financials`의 `ifrs-full_Equity` 오매칭** (2026-07-29 발견) — `Equity`
+   계정이 재무상태표(BS)뿐 아니라 자본변동표(SCE)에도 지분 항목별로 수백 건 중복 등장하는데,
+   `F.first()`가 어느 걸 채택할지 순서 의존적이었다. `sj_div`(BS/CIS/IS/CF) 필터링으로
+   재무제표 종류를 먼저 좁혀서 해결 — 애초에 후보를 하나로 만들어 `first()`의 순서 의존성
+   자체를 없앴다.
+2. **03번 `join_momentum`의 fan-out** (2026-07-30 발견, 심각도 최상) — 지표 결과가
+   종목당 1행이 아니라 최대 50행까지 중복돼 2021년 기준 55,182행이 나왔다(실제 종목수
+   2,368건). 핵심 원인은 `join_momentum`이 `stock_code`만으로 조인하는데 01번을 여러 날
+   반복 실행하면서 `1m_ago`/`12m_ago` 스냅샷이 종목당 여러 `bas_dt`로 계속 append됐기
+   때문이다. `_latest_snapshot()`을 추가해 종목별 최신 `bas_dt` 1건만 쓰도록 수정,
+   재실행 후 종목당 정확히 1행(2,368건)으로 검증 완료. 부차 원인으로 DART 배당 원본에
+   같은 키로 값 있는 행과 공백(`-`) 행이 동시 존재하는 문제도 함께 발견해 `F.first
+   (ignorenulls=True)`로 값이 있는 쪽만 채택하도록 고쳤다. 79종목 초기 검증(07-29) 때는
+   01번이 한 번만 실행된 상태라 이 버그가 드러나지 않았다 — 배치를 여러 번 재실행하는
+   실제 운영 환경에서만 나타났다.
+3. **03번 `pivot_financials`의 currency 오매칭** (2026-07-31 발견) — 종목에 따라 서로
+   다른 `rcept_no`(정정공시 등)가 서로 다른 표시통화를 쓰는 실제 사례가 있었다(예: 950190이
+   2018~2021은 HKD, 2022~2023은 USD). 기존 코드는 `earliest_rcept` 결정과 무관하게
+   `currency`만 따로 `F.first(ignorenulls=True)`로 뽑아, rcept_no와 currency가 서로 다른
+   공시 출처에서 올 수 있었다(실측: 4개 (stock_code,fs_div,year) 조합에서 currency가
+   2종 섞임). `earliest_rcept`로 결정된 그 rcept_no에 실제로 달린 currency를 조인해
+   가져오도록 수정, fan-out 없음(13,879행 유지) 검증 완료.
+4. **04번 `summarize_performance`의 `final_cum_return` 비결정성** (2026-07-30 발견) —
+   `groupBy("name").agg(F.last("cum_return"))`이 셔플 이후 행 순서에 의존해 마지막 구간
+   값이 나온다는 보장이 없었다. orderBy와 프레임을 명시한 윈도우(`Window.partitionBy
+   ("name").orderBy("period_start").rowsBetween(unboundedPreceding, unboundedFollowing)`)
+   위에서의 `F.last()`로 마지막 행 값을 그룹 전체에 채운 뒤 집계하도록 변경했다. 이
+   수정 이전에 산출된 결과 수치는 재실행 후 재확인이 필요했다.
+
+## 04번 벡터화 전/후 대조검증 (2026-07-31)
+
+`prices_at_dates`/`latest_valid_indicators`/`screen_portfolio`/`calculate_period_returns`를
+파이썬 for문+`unionByName` 방식에서 `crossJoin`+`Window.partitionBy(..., "rebalance_date")`
+방식으로 재작성하면서, 각 함수마다 기존 로직을 그대로 복제한 대조 스크립트(`logs/verify_*.py`)
+를 만들어 행 수·값을 완전 대조했다. 이 스크립트들은 커밋 대상으로 남겨 재사용 가능하다.
+
+**대조검증 중 발견한 타이브레이커 버그**: `latest_valid_indicators`의
+`orderBy(F.desc("rcept_no"))`가 동순위 문제를 안고 있었다. 사업보고서 하나(rcept_no 하나)에
+당기/전기/전전기 3개년치가 함께 응답으로 와서 indicators에 (stock_code, rcept_no) 조합이
+최대 3행 중복 존재했다(실측 확인, 530개 조합). rcept_no만으로 orderBy하면 이 3행이 동순위가
+되어 `row_number()`가 셔플 후 파티션 내 행 순서에 따라 비결정적으로 하나를 채택했다 — 벡터화
+전/후 결과를 36개 시점 전체로 대조하다가 16,605건 불일치로 실제 발견됐다. `orderBy(F.desc
+("rcept_no"), F.desc("year"))`로 타이브레이커를 추가해 "그 rcept_no가 보고하는 연도들 중
+가장 최근 연도"를 결정적으로 채택하도록 고쳐 해결했다.
+
+## 04번 이상치(101140 종목 급등) 발견과 처리 (2026-07-31)
+
+`per8_pbr1.2_dynone_monthly_n10` 전략의 2023-09-30~10-31 구간 누적수익률이 +179%로 튀는
+것을 발견하고 원인을 추적했다. 종목 101140이 이 구간에서 467원 → 9,340원(+1,900%) 급등했고,
+10종목 동일비중 포트폴리오라 `1900%/10 = +190%p`가 나머지 9종목 손실을 뒤엎었다. 계산 자체는
+정확했다(계산값 179.02% ≈ 실측 179.03%).
+
+문제는 이 급등이 실제로는 액면분할/병합으로 인한 가격 조정일 가능성이 있는데, 02번의
+`flag_split_suspects()`가 하루 등락률 기준으로 이 케이스를 **정확히 탐지했음에도**(2023-10-23
+플래그) 04번이 `split_suspected` 컬럼을 **한 번도 참조하지 않아** 그대로 백테스트에 반영된
+것이었다. 탐지는 됐지만 필터링에 연결이 안 된 상태로 방치돼 있었다.
+
+`calculate_period_returns()`에 `split_flags` 파라미터를 추가해, 보유 구간
+`(period_start, period_end]` 안에 그 종목의 `split_suspected=true` 날짜가 하루라도 있으면
+그 구간의 그 종목 수익률을 통째로 제외하도록 수정했다. 실측 검증: n30 이상 100개 전략,
+1,650개 (전략, 구간) 조합에서 값 변경을 확인했다.
+
+수정 반영 전/후 비교(이상치 포함 vs 제외):
+
+| | 이상치 포함 | 이상치 제외(현재) |
+|---|---|---|
+| n10 최고 누적수익률 | +193.2% | +32.7% |
+| 상위권 성격 | `dynone`(배당조건 없음) 위주 | `dy1.0/2.0/3.0`(배당조건 있음) 위주 |
+
+**미확인 사항**: 종목 101140 급등의 정확한 발생 일자(2023-10-23로 플래그는 찍혔으나, 실제
+공시 기준 분할/병합 이벤트인지는 별도 확인 안 됨)와 매수/매도 시점에 `split_suspected`가
+`False`로 찍혀 있었던 이유는 아직 확인되지 않았다.
+
+## 가치주 점수 전환 후 검증 (2026-08-01)
+
+`docs/PLAN_가치주점수_전환_20260731.md`에 따라 04번을 PER/PBR/배당수익률 문턱값 그리드에서
+ValuePick `Top100Service.scoreAll()`과 동일한 7팩터 백분위 가중합산 점수 방식으로 전환한 뒤
+아래를 검증했다.
+
+- **F-Score 필터 로직 대조**: `apply_fscore_filter()`를 Java `Top100Service.candidates`와
+  1:1 대조 확인 — `induty_code` null 종목 제외, 업종코드 앞 2자리 64/65/66(금융업)이면
+  F-Score 필터 면제, 그 외는 `f_score >= 6`만 통과. 단 Java 원본에 있던
+  `corp_cls=="Y"`(코스피 하드코딩)는 이식하지 않고 기존 `--market` 옵션(기본 ALL)을 그대로
+  따르기로 결정(사용자 확인).
+- **rank/percentileFraction 공식 대조**: `add_percentile_rank()`를 Java의 `ascRank`/
+  `descRank` + `percentileFraction((n-1-rank)/(n-1))`과 대조 확인. null은 불리한 쪽 극값
+  (`+inf`/`-inf`)으로 채워 최하위 순위를 받도록 구현했다.
+- **가중치 대조**: PER25%/PBR15%/ROE20%/ROA10%/부채비율15%/EPS성장률5%/모멘텀10%로 Java
+  `Top100Service.scoreAll()`과 대조 검증 완료. 배당수익률은 원본도 점수 팩터로 쓰지 않아
+  이 점수 계산에 포함하지 않는다.
+- **소규모 샘플(30개 전략) 선검증**: 전체 21,870개를 돌리기 전에 30개 전략으로 먼저
+  검증했다. 에러 없이 완료, F-Score 필터 통과 종목 2,368종목 중 1,127종목(금융업 예외
+  142종목 포함) — 과도하게 걸러내지도, 무의미하게 다 통과시키지도 않는 합리적 비율로 확인.
+  `held_count`도 n3/n10/n30/n50/n100 각각 목표치에 정확히 맞게 채워졌다(초반 시점만 후보
+  부족으로 소폭 미달 — FY2020 공시 지연 현상과 일치하는, 기존에 알려진 패턴).
+- **전체 21,870개 실행 결과**: `summary` 21,870행(name 전부 유일), `period_returns`
+  503,010행, null 없음 확인.
+
+## MySQL 적재 검증 (2026-08-01)
+
+`05_export_to_mysql.py --input-dir data/backtest_results_score_all --market ALL` 실행 후
+실제 MySQL 조회로 행 수를 확인했다. `strategy_performance` 21,870행, `backtest_results`
+503,010행 — 04번 Parquet 원본(summary/period_returns)과 행 수가 정확히 일치했다.
+
+**미해결 이슈**: `name` 컬럼이 MySQL에서 `LONGTEXT`로 생성됐다(Spark JDBC writer가 string
+타입을 스키마 추론 시 이렇게 매핑한 것으로 보이나, 직접 원인 확인은 하지 않음). `LONGTEXT`는
+일반 인덱스를 바로 걸 수 없어(prefix 길이 지정 필요), 이후 ValuePick 프론트엔드/API가 이
+테이블을 이름으로 조회·조인해야 하면 성능 문제가 될 수 있다.
