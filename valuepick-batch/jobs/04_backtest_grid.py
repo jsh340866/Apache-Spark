@@ -22,9 +22,11 @@
 종목 선정 기준: 조건(PER/PBR/배당수익률)을 만족하는 종목이 portfolio_size보다 많으면 PER이 낮은
 (더 저평가된) 순으로 상위 N종목을 선택한다. 동일 비중(1/N)으로 매수했다고 가정한다.
 
-배당수익률 관련 알려진 제약: dividends 원본이 2023년치만 수집되어 있어 2021/2022년 dividend_yield는
-전부 null이다. dividend_yield_min이 설정된 전략은 2021/2022 시점에서 조건을 평가할 수 없는 종목을
-"조건 불충족(제외)"으로 처리한다 - null을 조건을 만족한 것으로 잘못 통과시키지 않기 위함.
+배당수익률 null 처리: dividend_yield_min이 설정된 전략에서 배당액이 없는 종목은 "조건 불충족(제외)"으로
+처리한다(screen_portfolio의 condition 참고) - null을 조건을 만족한 것으로 잘못 통과시키지 않기 위함.
+배당 원본은 FY2020~2023 4개 연도가 모두 수집되어 있고, indicators 기준 연도별 950여 종목에
+dividend_amount가 존재한다(2026-07-31 실측). 따라서 배당 조건 전략의 선별 결과가 특정 시점에
+0건으로 나온다면 "데이터가 없어서 정상"이 아니라 조인·조건 로직을 의심해야 한다.
 
 입력:
   - conf/strategies.yaml
@@ -81,36 +83,66 @@ def build_rebalance_dates(years: list[str], rebalance: str) -> list[str]:
     return sorted(dates)
 
 
-def prices_at_dates(prices: DataFrame, rebalance_dates: list[str]) -> DataFrame:
+def prices_at_dates(spark: SparkSession, prices: DataFrame, rebalance_dates: list[str]) -> DataFrame:
     """각 리밸런싱 시점에 대해 종목별 "그 날짜 이하 가장 최근 거래일" 종가/상장주식수를 구한다.
-    말일이 휴일이면 그 이전 거래일 값을 쓰기 위해 날짜별로 필터+윈도우 처리한다.
+    말일이 휴일이면 그 이전 거래일 값을 쓰기 위해 "그 날짜 이하 중 최신"으로 보정한다.
     listed_share_count도 함께 가져오는 이유: screen_portfolio가 그 시점 가격으로 PER/PBR/배당수익률을
     직접 재계산하려면 그 시점의 상장주식수(eps_t/bps_t의 분모)도 함께 필요하다(룩어헤드 바이어스 수정).
-    윈도우 _rank==1 필터로 (stock_code, rebalance_date)당 정확히 1행만 남으므로 fan-out 없음."""
+
+    벡터화: 이전에는 시점마다 filter+Window를 만들어 unionByName으로 이어붙였는데, 그러면 시점 수만큼
+    실행계획 조각이 생겨 드라이버의 계획 트리가 초선형으로 커진다(실측: 시점 1개 32K자 -> 12개 1,010K자,
+    정비례 대비 2.6배). 계획 분석은 워커가 아니라 드라이버 혼자 하는 일이라, 이 구조로는 executor에
+    메모리를 더 줘도 드라이버가 먼저 OOM으로 죽는다(실측 확인). 날짜 목록 자체를 DataFrame으로 만들어
+    crossJoin하면 계획 조각이 1개로 고정되어 시점 수와 무관해진다.
+
+    윈도우를 (stock_code, rebalance_date)로 파티셔닝하므로 _rank==1 필터 후 조합당 정확히 1행 — fan-out 없음."""
     current = prices.filter(F.col("snapshot_type") == "current")
-    results = []
-    for rebalance_date in rebalance_dates:
-        w = Window.partitionBy("stock_code").orderBy(F.desc("bas_dt"))
-        snapshot = current.filter(F.col("bas_dt") <= rebalance_date) \
-            .withColumn("_rank", F.row_number().over(w)) \
-            .filter(F.col("_rank") == 1) \
-            .select("stock_code", F.col("close_price").alias("price"),
-                    F.col("listed_share_count").alias("share_count_t"),
-                    F.lit(rebalance_date).alias("rebalance_date"))
-        results.append(snapshot)
-    out = results[0]
-    for r in results[1:]:
-        out = out.unionByName(r)
-    return out
+
+    # 날짜를 파이썬 변수가 아니라 데이터로 다루는 것이 벡터화의 핵심. 36행짜리 작은 테이블이라
+    # broadcast하면 셔플 없이 각 executor에서 곧바로 조합된다.
+    dates_df = spark.createDataFrame([(d,) for d in rebalance_dates], ["rebalance_date"])
+
+    # crossJoin 직후 조건 필터로 (가격일 <= 리밸런싱일) 조합만 남긴다. Catalyst가 이 필터를
+    # 조인 조건으로 밀어넣으므로 실제로 모든 조합이 물리적으로 만들어지지는 않는다.
+    paired = current.crossJoin(F.broadcast(dates_df)) \
+        .filter(F.col("bas_dt") <= F.col("rebalance_date"))
+
+    w = Window.partitionBy("stock_code", "rebalance_date").orderBy(F.desc("bas_dt"))
+    return paired.withColumn("_rank", F.row_number().over(w)) \
+        .filter(F.col("_rank") == 1) \
+        .select("stock_code", F.col("close_price").alias("price"),
+                F.col("listed_share_count").alias("share_count_t"),
+                "rebalance_date")
 
 
-def latest_valid_indicators(indicators: DataFrame, rebalance_date: str) -> DataFrame:
-    """리밸런싱 시점 t 이전에 실제로 공시된(rcept_no <= t) 재무제표 중, 종목별로 가장 최근 것을 채택.
-    예: 2023-06-30 시점이면 2022년 사업보고서(2023년 3월 공시)는 통과하지만 2023년 사업보고서
-    (2024년 3월 공시 예정)는 아직 존재하지 않는 것으로 취급된다."""
-    eligible = indicators.filter(F.col("rcept_no") <= rebalance_date)
-    w = Window.partitionBy("stock_code").orderBy(F.desc("rcept_no"))
-    return eligible.withColumn("_rank", F.row_number().over(w)).filter(F.col("_rank") == 1).drop("_rank")
+def latest_valid_indicators(spark: SparkSession, indicators: DataFrame, rebalance_dates: list[str]) -> DataFrame:
+    """리밸런싱 시점마다, 그 시점 이전에 실제로 공시된(rcept_no <= t) 재무제표 중 종목별로 가장 최근
+    것을 채택. 예: 2023-06-30 시점이면 2022년 사업보고서(2023년 3월 공시)는 통과하지만 2023년
+    사업보고서(2024년 3월 공시 예정)는 아직 존재하지 않는 것으로 취급된다.
+
+    벡터화: prices_at_dates와 동일한 이유로, 시점마다 filter+Window를 반복해 union하면 계획 조각이
+    시점 수만큼 쌓여 드라이버가 OOM으로 죽는다(실측 확인, 04_backtest_grid.py 상단 참고). 시점 목록을
+    DataFrame으로 만들어 crossJoin하고 Window를 (stock_code, rebalance_date)로 파티셔닝하면 계획
+    조각이 1개로 고정된다. rcept_no <= rebalance_date 필터는 시점별로 여전히 개별 적용되므로
+    룩어헤드 바이어스 방지 로직은 그대로 유지된다 - 이 필터가 크로스조인 이후에도 시점 컬럼 기준으로
+    걸리는 것이 핵심이라, 시점을 한 덩어리로 처리한다고 해서 다른 시점의 미래 데이터가 섞여 들어오지
+    않는다.
+
+    orderBy에 year를 반드시 함께 둬야 한다: 사업보고서 하나(rcept_no 하나)에 당기/전기/전전기
+    3개년치가 함께 응답으로 와서 indicators에 (stock_code, rcept_no) 조합이 최대 3행 중복 존재한다
+    (실측 확인, 530개 조합). rcept_no만으로 orderBy하면 이 3행이 동순위가 되어 row_number()가
+    셔플 후 파티션 내 행 순서에 따라 비결정적으로 하나를 채택한다 - 벡터화 전/후 결과를 36개 시점
+    전체로 대조하다가 16,605건 불일치로 실제 발견됨. year를 함께 내림차순 정렬해 "그 rcept_no가
+    보고하는 연도들 중 가장 최근 연도(=사업보고서 본문 대상 연도)"를 결정적으로 채택한다."""
+    dates_df = spark.createDataFrame([(d,) for d in rebalance_dates], ["rebalance_date"])
+
+    paired = indicators.crossJoin(F.broadcast(dates_df)) \
+        .filter(F.col("rcept_no") <= F.col("rebalance_date"))
+
+    w = Window.partitionBy("stock_code", "rebalance_date").orderBy(F.desc("rcept_no"), F.desc("year"))
+    return paired.withColumn("_rank", F.row_number().over(w)) \
+        .filter(F.col("_rank") == 1) \
+        .drop("_rank")
 
 
 def compute_point_in_time_ratios(df: DataFrame) -> DataFrame:
@@ -149,19 +181,28 @@ def compute_point_in_time_ratios(df: DataFrame) -> DataFrame:
     return df
 
 
-def screen_portfolio(indicators: DataFrame, prices_snapshot: DataFrame, strategies: DataFrame,
-                      rebalance_date: str) -> DataFrame:
-    """리밸런싱 시점 하나에 대해, 전략별로 조건을 만족하는 종목 중 PER 낮은 순 상위 portfolio_size종목 선정.
-    prices_snapshot은 이미 이 rebalance_date로 필터된 (stock_code당 1행) 가격 스냅샷이어야 한다."""
-    ind = latest_valid_indicators(indicators, rebalance_date)
+def screen_portfolio(spark: SparkSession, indicators: DataFrame, prices_by_date: DataFrame,
+                      strategies: DataFrame, rebalance_dates: list[str]) -> DataFrame:
+    """전략별로 조건을 만족하는 종목 중 PER 낮은 순 상위 portfolio_size종목을, 리밸런싱 시점
+    전체에 대해 한 번에 선정한다. prices_by_date는 prices_at_dates의 출력(모든 시점의 stock_code당
+    1행 스냅샷이 rebalance_date 컬럼으로 이미 구분되어 있음)을 그대로 넘긴다.
+
+    벡터화: 원래는 이 함수가 rebalance_date 스칼라 하나만 받아 시점 하나를 처리했고, 호출부
+    (run_for_rebalance_group)가 시점 수만큼 파이썬 for문으로 이 함수를 호출해 unionByName으로
+    이어붙였다. 시점마다 crossJoin(전략)을 포함한 서브플랜이 하나씩 생겨, union할 때마다 Catalyst가
+    전체 트리를 재분석하는 비용이 초선형으로 쌓였다(실측: 시점 1개->12개, 계획 길이 32,218자->
+    1,010,833자, 정비례 대비 2.6배). 시점을 rebalance_date 컬럼을 가진 데이터로 다뤄 한 번의
+    crossJoin(전략)으로 처리하면 계획 조각이 시점 수와 무관하게 1개로 고정된다."""
+    ind = latest_valid_indicators(spark, indicators, rebalance_dates)
 
     # 가격 조인은 crossJoin(전략 테이블) 이전에 수행 - 전략 수(1,000)만큼 행이 불어나기 전에
-    # 종목 수 규모(수천 행)에서 끝내는 것이 훨씬 저렴하다. inner join: 그 시점 가격이 없는 종목은
+    # (종목 수 x 시점 수) 규모에서 끝내는 것이 훨씬 저렴하다. join 키에 rebalance_date를 추가해
+    # 같은 종목이라도 시점이 다르면 섞이지 않게 한다. inner join: 그 시점 가격이 없는 종목은
     # 애초에 매매 불가하므로 스크리닝 대상에서 자연히 제외된다.
-    ind_priced = ind.join(prices_snapshot, on="stock_code", how="inner")
+    ind_priced = ind.join(prices_by_date, on=["stock_code", "rebalance_date"], how="inner")
     ind_priced = compute_point_in_time_ratios(ind_priced)
 
-    # 전략 수 x 종목 수 조합 생성 (작은 전략 테이블을 브로드캐스트해 셔플 최소화)
+    # 전략 수 x (종목 수 x 시점 수) 조합 생성 (작은 전략 테이블을 브로드캐스트해 셔플 최소화)
     joined = ind_priced.crossJoin(F.broadcast(strategies))
 
     condition = (
@@ -174,41 +215,81 @@ def screen_portfolio(indicators: DataFrame, prices_snapshot: DataFrame, strategi
     )
     eligible = joined.filter(condition)
 
-    w = Window.partitionBy("name").orderBy(F.col("per_t").asc())
+    # 시점이 섞여 있으므로 랭킹도 (전략, 시점) 단위로 매겨야 한다. rebalance_date를 빠뜨리면
+    # 서로 다른 시점의 종목들이 한 랭킹 안에 섞이는 조용한 버그가 된다.
+    w = Window.partitionBy("name", "rebalance_date").orderBy(F.col("per_t").asc())
     ranked = eligible.withColumn("rank", F.row_number().over(w))
     selected = ranked.filter(F.col("rank") <= F.col("portfolio_size"))
 
-    return selected.select("name", "stock_code", "portfolio_size") \
-        .withColumn("rebalance_date", F.lit(rebalance_date))
+    return selected.select("name", "stock_code", "portfolio_size", "rebalance_date")
 
 
-def calculate_period_returns(portfolios: DataFrame, prices_by_date: DataFrame, rebalance_dates: list[str]) -> DataFrame:
+def calculate_period_returns(spark: SparkSession, portfolios: DataFrame, prices_by_date: DataFrame,
+                              rebalance_dates: list[str], split_flags: DataFrame) -> DataFrame:
     """각 전략의 리밸런싱 구간(rebalance_dates[i] 매수 -> rebalance_dates[i+1] 매도)별 포트폴리오 수익률.
-    동일비중(1/portfolio_size) 가정, 구간 내 종목별 수익률의 단순평균."""
-    period_results = []
-    for buy_date, sell_date in zip(rebalance_dates[:-1], rebalance_dates[1:]):
-        buy_prices = prices_by_date.filter(F.col("rebalance_date") == buy_date) \
-            .select("stock_code", F.col("price").alias("buy_price"))
-        sell_prices = prices_by_date.filter(F.col("rebalance_date") == sell_date) \
-            .select("stock_code", F.col("price").alias("sell_price"))
+    동일비중(1/portfolio_size) 가정, 구간 내 종목별 수익률의 단순평균.
 
-        portfolio = portfolios.filter(F.col("rebalance_date") == buy_date)
-        with_prices = portfolio.join(buy_prices, on="stock_code", how="inner") \
-            .join(sell_prices, on="stock_code", how="inner")
+    벡터화: 원래는 구간(buy_date, sell_date) 쌍마다 파이썬 for문으로 반복하며 buy_prices/sell_prices를
+    필터링하고 결과를 unionByName으로 이어붙였다. screen_portfolio와 같은 이유로 구간 수만큼 계획
+    조각이 쌓여 드라이버 부담이 커진다. 구간 목록 자체를 DataFrame(period_start, period_end)으로
+    만들어, prices_by_date를 매수가/매도가 두 번 조인하는 방식으로 한 번에 처리한다.
 
-        stock_return = (F.col("sell_price") - F.col("buy_price")) / F.col("buy_price")
-        with_return = with_prices.withColumn("stock_return", stock_return)
+    액면분할/병합 의심 종목 제외 (2026-07-31 notebooks/check_04_02_backtest.ipynb 진단에서 발견,
+    본 코드에 반영): 종목 101140이 2023-10-23 하루 만에 467원->9,340원(+1900%)으로 뛴 게
+    02_clean_prices.py의 flag_split_suspects()에는 정확히 플래그됐지만, 04번이 cleaned/prices의
+    close_price만 읽고 split_suspected 컬럼 자체를 참조하지 않아 그대로 백테스트에 반영됐다
+    (per8_pbr1.2_dynone_monthly_n10의 2023-09~10 구간 수익률이 이 한 종목에 지배됨. n이 작을수록
+    소수 종목 이상치에 취약해 n10 계열 성과가 부풀려진 원인 중 하나로 확인됨). 보유 구간
+    (period_start, period_end] 안에 그 종목의 split_suspected=true 날짜가 하루라도 있으면
+    그 구간의 그 종목 수익률을 통째로 제외한다."""
+    periods = list(zip(rebalance_dates[:-1], rebalance_dates[1:]))
+    periods_df = spark.createDataFrame(periods, ["period_start", "period_end"])
 
-        period_return = with_return.groupBy("name").agg(
-            F.avg("stock_return").alias("period_return"),
-            F.count("stock_code").alias("held_count"),
-        ).withColumn("period_start", F.lit(buy_date)).withColumn("period_end", F.lit(sell_date))
-        period_results.append(period_return)
+    buy_prices = prices_by_date.select(
+        "stock_code", F.col("price").alias("buy_price"),
+        F.col("rebalance_date").alias("period_start"),
+    )
+    sell_prices = prices_by_date.select(
+        "stock_code", F.col("price").alias("sell_price"),
+        F.col("rebalance_date").alias("period_end"),
+    )
 
-    out = period_results[0]
-    for r in period_results[1:]:
-        out = out.unionByName(r)
-    return out
+    # portfolios.rebalance_date(매수 시점)를 구간의 period_start와 맞춰 그 구간의 period_end를
+    # 함께 붙인다. 이후 buy_prices/sell_prices 조인 키에 period_start/period_end를 포함시켜
+    # 서로 다른 구간의 가격이 섞이지 않게 한다.
+    with_period = portfolios.join(
+        F.broadcast(periods_df), portfolios["rebalance_date"] == periods_df["period_start"], "inner"
+    )
+
+    with_prices = with_period.join(buy_prices, on=["stock_code", "period_start"], how="inner") \
+        .join(sell_prices, on=["stock_code", "period_end"], how="inner")
+
+    # (종목, 구간) 조합이 이상치인지 미리 distinct로 판정한 뒤 left-anti join으로 제외한다.
+    # split_flags(종목,날짜)를 구간과 직접 조인하면 구간 안 플래그 일수만큼 행이 불어나므로
+    # (fan-out), 반드시 먼저 (stock_code, period_start, period_end) 단위로 좁힌다.
+    stock_periods = with_prices.select("stock_code", "period_start", "period_end").distinct()
+    outlier_periods = stock_periods.alias("p").join(
+        split_flags.alias("f"),
+        (F.col("p.stock_code") == F.col("f.stock_code"))
+        & (F.col("f.flag_date") > F.col("p.period_start"))
+        & (F.col("f.flag_date") <= F.col("p.period_end")),
+        how="inner",
+    ).select("p.stock_code", "p.period_start", "p.period_end").distinct()
+
+    with_prices = with_prices.join(
+        outlier_periods, on=["stock_code", "period_start", "period_end"], how="left_anti"
+    )
+
+    stock_return = (F.col("sell_price") - F.col("buy_price")) / F.col("buy_price")
+    with_return = with_prices.withColumn("stock_return", stock_return)
+
+    # 구간이 섞여 있으므로 집계도 (전략, 구간) 단위로 묶어야 한다. period_start/period_end를
+    # 빠뜨리면 서로 다른 구간의 종목 수익률이 한 그룹에 섞이는 조용한 버그가 된다.
+    period_return = with_return.groupBy("name", "period_start", "period_end").agg(
+        F.avg("stock_return").alias("period_return"),
+        F.count("stock_code").alias("held_count"),
+    )
+    return period_return
 
 
 def summarize_performance(period_returns: DataFrame) -> DataFrame:
@@ -252,33 +333,31 @@ def summarize_performance(period_returns: DataFrame) -> DataFrame:
     return summary
 
 
-def run_for_rebalance_group(indicators: DataFrame, prices: DataFrame, strategies: DataFrame,
-                             years: list[str], rebalance: str) -> tuple[DataFrame, DataFrame]:
+def run_for_rebalance_group(spark: SparkSession, indicators: DataFrame, prices: DataFrame,
+                             strategies: DataFrame, years: list[str], rebalance: str,
+                             split_flags: DataFrame) -> tuple[DataFrame, DataFrame]:
     """monthly 또는 quarterly 그룹 전략들에 대해 리밸런싱 시점 생성부터 성과 요약까지 전체 파이프라인 실행.
     시점 수(monthly 36개, quarterly 12개)만큼 screen_portfolio를 반복 호출해 union하면 DataFrame
     실행계획(lineage)이 시점 수만큼 계속 이어붙어 드라이버에서 OutOfMemoryError가 발생했다(실측 확인).
-    union 직후 .cache()로 lineage를 끊어 이를 방지한다."""
+    screen_portfolio가 시점 목록 전체를 한 번에 처리하도록 벡터화했으므로 이제 이 함수에는 시점별
+    반복이 남아있지 않다. cache()는 여전히 이후 단계(calculate_period_returns, summarize_performance)
+    에서의 재스캔을 막기 위해 유지한다."""
     rebalance_dates = build_rebalance_dates(years, rebalance)
     print(f"[{rebalance}] 리밸런싱 시점 {len(rebalance_dates)}개: {rebalance_dates[0]} ~ {rebalance_dates[-1]}")
 
     group_strategies = strategies.filter(F.col("rebalance") == rebalance)
-    prices_by_date = prices_at_dates(prices, rebalance_dates).cache()
+    prices_by_date = prices_at_dates(spark, prices, rebalance_dates).cache()
 
-    portfolio_results = []
-    for rebalance_date in rebalance_dates[:-1]:
-        # prices_by_date는 이미 캐시된 상태이므로 시점별 필터는 추가 스캔 없이 캐시에서 처리된다.
-        # screen_portfolio 내부에서 crossJoin(전략) 이전에 이 (stock_code당 1행) 스냅샷과 조인한다.
-        date_prices = prices_by_date.filter(F.col("rebalance_date") == rebalance_date)
-        portfolio = screen_portfolio(indicators, date_prices, group_strategies, rebalance_date)
-        portfolio_results.append(portfolio)
-    portfolios = portfolio_results[0]
-    for p in portfolio_results[1:]:
-        portfolios = portfolios.unionByName(p)
+    # 마지막 시점은 매도 전용이라 스크리닝(매수) 대상이 아니다 - 기존 for문이 rebalance_dates[:-1]만
+    # 순회하던 것과 동일한 의미로, screen_portfolio에 넘기는 시점 목록에서 마지막 시점을 제외한다.
+    buy_dates = rebalance_dates[:-1]
+    buy_prices_by_date = prices_by_date.filter(F.col("rebalance_date").isin(buy_dates))
+    portfolios = screen_portfolio(spark, indicators, buy_prices_by_date, group_strategies, buy_dates)
     portfolios = portfolios.cache()
     portfolios.count()  # 캐시를 즉시 실체화해 이후 단계에서 lineage 재계산이 일어나지 않게 함
 
-    period_returns = calculate_period_returns(portfolios, prices_by_date, rebalance_dates).cache()
-    period_returns.count()  # calculate_period_returns 내부도 구간 수만큼 반복 union하므로 여기서 실체화
+    period_returns = calculate_period_returns(spark, portfolios, prices_by_date, rebalance_dates, split_flags).cache()
+    period_returns.count()  # 이후 summarize_performance에서 재스캔하지 않도록 여기서 실체화
 
     summary = summarize_performance(period_returns).cache()
     summary.count()
@@ -323,10 +402,20 @@ def main():
     indicators = indicators.cache()
     prices = spark.read.parquet(args.prices_dir)
 
+    # 액면분할/병합 의심 종목 제외용 (종목, 날짜) 목록. cleaned/prices의 split_suspected는
+    # 02_clean_prices.py가 하루 단위로 찍는 플래그이므로 여기서 True인 날짜만 미리 추려
+    # calculate_period_returns가 두 리밸런싱 그룹에서 반복 조인할 수 있게 한다.
+    split_flags = prices.filter(F.col("split_suspected") == True).select(
+        "stock_code", F.col("bas_dt").alias("flag_date")
+    ).cache()
+    print(f"액면분할/병합 의심 플래그: {split_flags.count()}건")
+
     period_returns_all = []
     summary_all = []
     for rebalance in ("monthly", "quarterly"):
-        period_returns, summary = run_for_rebalance_group(indicators, prices, strategies, years, rebalance)
+        period_returns, summary = run_for_rebalance_group(
+            spark, indicators, prices, strategies, years, rebalance, split_flags
+        )
         period_returns_all.append(period_returns)
         summary_all.append(summary)
         print(f"[{rebalance}] 구간별 수익률/성과 요약 완료")
@@ -344,6 +433,7 @@ def main():
     for df in period_returns_all + summary_all:
         df.unpersist()
     indicators.unpersist()
+    split_flags.unpersist()
 
     spark.stop()
 

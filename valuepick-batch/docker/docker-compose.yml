@@ -27,10 +27,13 @@ services:
       - ../jobs:/opt/spark-apps/jobs           # 잡 스크립트 (01~05)
       - ../conf:/opt/spark-apps/conf           # strategies.yaml, spark-defaults.conf
       - ../data:/opt/spark-apps/data           # Parquet 데이터 레이크 (raw/cleaned/indicators/backtest_results)
+      - ../logs:/opt/spark-apps/logs           # 이벤트 로그(events/) + spark-submit stdout 저장 위치
     networks:
       - spark-net
 
   # 연산 수행 노드 1 - 실제 태스크(파티션 단위 작업)를 실행하는 주체
+  # [환경의존] --memory 3G는 집 컴퓨터(호스트 31.9GB) 기준. 학원 컴퓨터(7.7GB)에서는 2G로 되돌릴 것.
+  # 상세: docs/ENVIRONMENT.md
   spark-worker-1:
     build:
       context: .
@@ -39,7 +42,7 @@ services:
     user: root
     command: >
       /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker
-      spark://spark-master:7077 --cores 2 --memory 2G --webui-port 8081
+      spark://spark-master:7077 --cores 2 --memory 3G --webui-port 8081
     ports:
       - "8081:8081"   # 워커 1 UI - 이 워커가 실행 중인 executor/태스크 로그 확인
     depends_on:
@@ -48,10 +51,12 @@ services:
       - ../jobs:/opt/spark-apps/jobs
       - ../conf:/opt/spark-apps/conf
       - ../data:/opt/spark-apps/data
+      - ../logs:/opt/spark-apps/logs
     networks:
       - spark-net
 
   # 연산 수행 노드 2 - worker-1과 동일 스펙, 스케일링 효율 비교를 위해 존재
+  # [환경의존] worker-1과 동일하게 학원 복귀 시 2G로 되돌릴 것. 상세: docs/ENVIRONMENT.md
   spark-worker-2:
     build:
       context: .
@@ -60,7 +65,7 @@ services:
     user: root
     command: >
       /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker
-      spark://spark-master:7077 --cores 2 --memory 2G --webui-port 8082
+      spark://spark-master:7077 --cores 2 --memory 3G --webui-port 8082
     ports:
       - "8082:8082"   # 워커 2 UI (worker-1과 호스트 포트 충돌 방지 위해 8082 사용)
     depends_on:
@@ -69,6 +74,30 @@ services:
       - ../jobs:/opt/spark-apps/jobs
       - ../conf:/opt/spark-apps/conf
       - ../data:/opt/spark-apps/data
+      - ../logs:/opt/spark-apps/logs
+    networks:
+      - spark-net
+
+  # 잡 종료 후 실행 이력 조회 전용 - 드라이버 UI(4040)는 잡이 죽으면 같이 사라지므로,
+  # 이벤트 로그(spark.eventLog.dir)를 읽어 스테이지/태스크/executor 상태를 사후에 재구성한다.
+  # 04번이 세 번 실패했을 때 "어디서 멈췄는지"를 확인할 수단이 없었던 문제를 해결하기 위해 추가.
+  spark-history:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-history
+    user: root
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.history.HistoryServer
+    environment:
+      # 이 서버는 잡을 실행하지 않고 로그만 읽으므로 spark-defaults.conf가 아니라 전용 옵션으로 지정한다.
+      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=file:///opt/spark-apps/logs/events -Dspark.history.ui.port=18080
+    ports:
+      - "18080:18080"
+    depends_on:
+      - spark-master
+    volumes:
+      - ../logs:/opt/spark-apps/logs
     networks:
       - spark-net
 
@@ -97,6 +126,7 @@ services:
       - ../conf:/opt/spark-apps/conf
       - ../data:/opt/spark-apps/data
       - ../notebooks:/opt/spark-apps/notebooks
+      - ../logs:/opt/spark-apps/logs
     networks:
       - spark-net
 
