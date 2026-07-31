@@ -77,6 +77,18 @@ def already_ingested(spark: SparkSession, path: str, partition_value: str, parti
     return df.filter(df[partition_col] == partition_value).limit(1).count() > 0
 
 
+def snapshot_type_exists(spark: SparkSession, path: str, snapshot_type: str) -> bool:
+    """1m_ago/12m_ago 스냅샷이 이미 하나라도 있는지 확인.
+    already_ingested(bas_dt 기준)는 momentum_base_dt가 실행일마다 달라져 target 날짜도 매번 바뀌므로
+    재수집 방지가 사실상 작동하지 않았다(01번을 여러 번 실행할 때마다 새 bas_dt로 계속 append되어
+    03_build_indicators.py의 join_momentum에서 fan-out 버그가 실제로 발생한 원인). momentum 계산은
+    "정확히 N개월 전"이 아니라 최신 스냅샷 하나면 충분하므로, snapshot_type 존재 여부로 체크한다."""
+    if not os.path.exists(path):
+        return False
+    df = spark.read.parquet(path)
+    return df.filter(df["snapshot_type"] == snapshot_type).limit(1).count() > 0
+
+
 def already_ingested_values(spark: SparkSession, path: str, partition_col: str) -> set[str]:
     """이미 받은 파티션 값 전체를 한 번에 조회 (날짜 범위 루프에서 매 반복마다 전체 스캔하는 것 방지)"""
     if not os.path.exists(path):
@@ -324,9 +336,8 @@ def main():
         momentum_base_dt = price_end
         for label, months_back in (("1m_ago", 1), ("12m_ago", 12)):
             target = months_ago(momentum_base_dt, months_back)
-            snapshot_bas_dt = target.strftime("%Y%m%d")
-            if already_ingested(spark, prices_path, snapshot_bas_dt, "bas_dt"):
-                print(f"이미 수집된 {label} 스냅샷, 스킵: {target}")
+            if snapshot_type_exists(spark, prices_path, label):
+                print(f"{label} 스냅샷 이미 존재, 스킵 (최신 스냅샷 하나면 충분하므로 재수집 안 함)")
                 continue
 
             snapshot_prices, actual_date = fetch_stock_prices_on_or_before(stock_api_key, target, stock_codes)

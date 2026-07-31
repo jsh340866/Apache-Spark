@@ -15,7 +15,12 @@ PER_MAX = [8, 10, 12, 15, 20]
 PBR_MAX = [0.8, 1.0, 1.2, 1.5, 2.0]
 DIVIDEND_YIELD_MIN = [None, 1.0, 2.0, 3.0]
 REBALANCE = ["monthly", "quarterly"]
-PORTFOLIO_SIZE = [10, 20, 30, 50, 100]
+# 300은 대부분의 리밸런싱 시점에서 실제로 상한에 걸리는 값(조건 통과 종목이 PROGRESS.md 실측 기준
+# 시점별 33~1,760개이므로) - "사실상 무제한"(9999)을 시도했다가 시점마다 조건 통과 종목 전부를
+# 그대로 담아 중간 결과 부피가 기존 대비 5~6배로 커지면서 드라이버 OOM이 실제로 발생해 낮춘 값.
+# 여전히 10/30/50/100보다는 훨씬 느슨한 선별이라 "선별 강도가 약해질수록 성과가 어떻게 변하는가"를
+# 볼 수 있고, 메모리도 감당 가능한 수준에서 타협한 값이다.
+PORTFOLIO_SIZE = [10, 30, 50, 100, 300]
 
 
 def strategy_name(per_max, pbr_max, dividend_yield_min, rebalance, portfolio_size) -> str:

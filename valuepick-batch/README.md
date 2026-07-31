@@ -4,6 +4,95 @@ Spark 기반 가치투자 백테스팅 파이프라인. 상세 설계는 [PROJEC
 
 **절대 원칙**: 기존 `ValuePick`(Spring Boot, MySQL)의 프로덕션 코드·스케줄러·DB를 건드리지 않는 완전히 분리된 리포.
 
+## 프로젝트 방향
+
+데이터를 수집해 기준값(PER 상한/PBR 상한/배당수익률 하한 등)을 정하고, 그 기준에 맞는 종목을 그때그때 샀다면 실제로 이득이었는지를 과거 데이터로 검증한다. 기준을 1,000가지 조합(`conf/strategies.yaml`)으로 만들어두고, 각 조합에 대해 "과거 특정 시점으로 돌아가 그 기준대로 계속 사고팔았다면 최종적으로 얼마나 벌었을까"를 시뮬레이션한다.
+
+## 아키텍처
+
+```
+                    ┌─────────────┐
+                    │ spark-master │  스케줄링만, 계산 안 함
+                    └──────┬──────┘
+              ┌────────────┴────────────┐
+      ┌───────┴───────┐         ┌───────┴───────┐
+      │ spark-worker-1 │         │ spark-worker-2 │   각 2코어 / 2GB
+      │  (2 cores)     │         │  (2 cores)     │   총 4코어, shuffle.partitions=4
+      └───────────────┘         └───────────────┘
+
+  jupyter (진단·검증용, 4041)        mysql (서빙용, 3307 — 05번 미구현이라 아직 비어있음)
+```
+
+외부 API(DART/공공데이터포털/한국수출입은행) → Spark 잡이 Parquet으로 원천~중간~최종 데이터를 전부 처리 → (미구현) MySQL로 서빙. **MySQL을 잡 간 중간 데이터 전달에 쓰지 않는다** — 잡과 잡 사이는 항상 Parquet(`data/` 하위, `year=YYYY` 파티셔닝)로만 주고받는다.
+
+## 파이프라인 (jobs/)
+
+```
+01_ingest_raw  →  02_clean_prices  →  03_build_indicators  →  04_backtest_grid  →  (05_export_to_mysql, 미구현)
+   원천 수집         시세 정제           지표 계산               백테스트 그리드         MySQL 적재
+```
+
+각 화살표는 Parquet 파일로 이어진다 — 이전 잡의 출력 디렉토리가 다음 잡의 입력 디렉토리다.
+
+### `01_ingest_raw.py` — 원천 수집
+
+KRX 상장종목, DART 재무제표·배당, 공공데이터포털 주가를 API에서 직접 받아 Parquet으로 저장한다. 기존 ValuePick(Spring Boot)의 MySQL은 거치지 않는다.
+
+- `companies`: KRX 상장종목 + DART corpCode 매핑 (`bas_dt` 기준 전량 overwrite)
+- `prices`: 일별 시세. `snapshot_type` 컬럼으로 두 종류를 구분해 저장
+  - `current`: 지정한 날짜 범위 전체 (백테스트 대상 구간)
+  - `1m_ago`/`12m_ago`: 모멘텀 계산용 스냅샷, 최근 수집일 기준 1개월 전/12개월 전 1건씩만 (이미 있으면 재수집 스킵)
+- `financials`, `dividends`: DART 종목별 재무제표·배당 (연도 단위, 재수집 방지 로직 있음 — DART 일일 호출 제한 대응)
+
+출력: `data/raw/{companies,prices,financials,dividends}`
+
+### `02_clean_prices.py` — 시세 정제
+
+`prices`의 `current` 구간만 정제 대상으로 삼는다(`1m_ago`/`12m_ago`는 시점이 뚝 떨어져 있어 같이 섞으면 그 사이가 전부 결측으로 오인되므로 원본 그대로 통과).
+
+- 결측 거래일 보간: 종목별 거래일 캘린더 대비 빈 날짜를 직전 종가로 forward-fill (`is_interpolated` 플래그)
+- 액면분할/병합 의심 탐지: 전일 대비 등락률이 임계치(-40%/+67%)를 벗어나면 `split_suspected`로 표시만 함 (자동 보정은 하지 않음 — 원천 API에 분할 이벤트 필드가 없어 확정 판정이 불가능하기 때문)
+
+출력: `data/cleaned/prices`
+
+### `03_build_indicators.py` — 지표 계산
+
+재무제표를 언피벗해 EPS/BPS/PER/PBR/ROE/부채비율/배당수익률/ROA/모멘텀/F-Score/EPS성장률을 계산한다. 기존 Spring Boot `FinancialIndicatorService`의 계산 로직을 재현하는 게 목표이며 `notebooks/verify_indicators.ipynb`로 대조 검증한다.
+
+핵심 출력 컬럼:
+- `eps`, `bps`, `net_income_krw`, `equity_krw`, `dividend_amount`: 04번이 리밸런싱 시점별로 PER/PBR/배당수익률을 직접 재계산할 때 쓰는 원본 값 (룩어헤드 바이어스 방지 핵심)
+- `per`, `pbr`, `dividend_yield`: 최신 종가 기준 계산값. 04번 스크리닝에는 쓰이지 않으며 `verify_indicators.ipynb`의 Java 대조 검증 전용으로 유지
+- `rcept_no`: DART 접수번호(앞 8자리가 실제 공시일). 04번이 `rcept_no <= 리밸런싱 시점`으로 미래 정보 사용을 차단하는 핵심 필드
+
+출력: `data/indicators`
+
+### `04_backtest_grid.py` — 백테스트 그리드 (프로젝트 핵심)
+
+`conf/strategies.yaml`의 전략 조합마다, 매 리밸런싱 시점(monthly 36개/quarterly 12개)에 조건을 만족하는 종목으로 포트폴리오를 구성하고 다음 시점까지 보유했을 때의 수익률을 시뮬레이션한다.
+
+- **룩어헤드 바이어스 방지 (이중 장치)**
+  - 재무제표: `rcept_no <= 리밸런싱 시점`으로, 그 시점에 아직 공시되지 않은 사업보고서는 쓰지 않는다
+  - 가격: 03번이 계산해둔 "최신가 기준 고정 PER/PBR"을 쓰지 않고, `compute_point_in_time_ratios()`가 그 리밸런싱 시점의 실제 종가로 PER/PBR/배당수익률을 매번 다시 계산한다
+- **종목 선정**: 조건(PER 상한/PBR 상한/배당수익률 하한)을 만족하는 종목 중 PER 낮은 순 상위 `portfolio_size`개, 동일 비중
+- **`portfolio_size` 후보**: `10 / 30 / 50 / 100 / 9999(=사실상 무제한, 이름은 "ALL"로 표시)`. 종목 수가 최대치인 종목 총수를 넘지 않는 9999를 넣어 "조건만 만족하면 전부 매수"를 표현 — PER/PBR 조건 자체가 시장 평균 대비 선별 효과가 있는지 검증하는 대조군
+- **성능**: 시점별 union이 lineage를 계속 이어붙여 드라이버 OOM을 일으켰던 이력이 있어, 각 단계마다 `.cache()` + `.count()`로 즉시 실체화해 lineage를 끊는다
+
+출력: `data/backtest_results/{period_returns, summary}`
+
+### `05_export_to_mysql.py` — 미구현
+
+04번 결과(`backtest_results`, `strategy_performance`)를 Spark JDBC writer로 MySQL에 upsert할 예정.
+
+## 데이터 흐름 요약
+
+```
+companies ─┐
+prices ────┼─→ [02] cleaned/prices ─┐
+financials ┤                        ├─→ [03] indicators ─┐
+dividends ─┘                        │                    ├─→ [04] backtest_results
+                          strategies.yaml ────────────────┘
+```
+
 ## 현재 진행 상태 (TODO)
 
 - [x] 1. `docker/docker-compose.yml` — Spark 클러스터(master + worker 2) + Jupyter + MySQL

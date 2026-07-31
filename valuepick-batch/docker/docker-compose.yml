@@ -79,7 +79,8 @@ services:
     environment:
       - JUPYTER_ENABLE_LAB=yes
       # 파일탐색기 루트를 /opt/spark-apps로 지정 (기본 루트 /home/jovyan/work 밖이라 안 보이던 문제 해결)
-      - NOTEBOOK_ARGS=--ServerApp.root_dir=/opt/spark-apps
+      # 로컬 전용 개발 환경이라 토큰/비밀번호 인증 비활성화 (매번 토큰 입력 번거로움 방지)
+      - NOTEBOOK_ARGS=--ServerApp.root_dir=/opt/spark-apps --ServerApp.token='' --ServerApp.password=''
     working_dir: /opt/spark-apps
     ports:
       - "8888:8888"

@@ -282,6 +282,14 @@ def run_for_rebalance_group(indicators: DataFrame, prices: DataFrame, strategies
 
     summary = summarize_performance(period_returns).cache()
     summary.count()
+
+    # prices_by_date/portfolios는 이 함수 안에서만 쓰고 끝나는 중간 산물이다. unpersist 없이 두면
+    # monthly 처리분이 executor 메모리에 남은 채로 quarterly 처리가 또 캐싱을 쌓아, 실제로
+    # OutOfMemoryError가 발생했다(portfolio_size를 9999->300으로 낮춰도 재발 - 근본 원인이 크기가
+    # 아니라 캐시 미해제였음을 실측 확인). period_returns/summary는 main()의 최종 write까지 필요하므로
+    # 여기서는 놓지 않는다.
+    prices_by_date.unpersist()
+    portfolios.unpersist()
     return period_returns, summary
 
 
@@ -330,6 +338,12 @@ def main():
     period_returns.write.mode("overwrite").parquet(f"{args.output_dir}/period_returns")
     summary.write.mode("overwrite").parquet(f"{args.output_dir}/summary")
     print(f"backtest_results 저장 완료: {args.output_dir}")
+
+    # monthly/quarterly 각 그룹의 period_returns/summary(union 이전 원본)와 indicators 캐시를 정리.
+    # write까지 끝났으므로 더 이상 필요 없다.
+    for df in period_returns_all + summary_all:
+        df.unpersist()
+    indicators.unpersist()
 
     spark.stop()
 
