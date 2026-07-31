@@ -149,17 +149,25 @@ def pivot_financials(stacked: DataFrame) -> DataFrame:
             F.coalesce(F.col(f"{field}_by_id"), F.col(f"{field}_by_nm"), F.lit(0)),
         ).drop(f"{field}_by_id", f"{field}_by_nm")
 
-    # currency는 계정별로 다를 수 없으므로 그룹 내 첫 값 사용
-    currency = stacked.filter(F.col("currency").isNotNull()).groupBy(*keys) \
-        .agg(F.first("currency", ignorenulls=True).alias("currency"))
-    result = result.join(currency, on=keys, how="left")
-
     # 같은 year라도 "당해연도 사업보고서 자체"와 "다음연도 사업보고서의 전기(frmtrm) 데이터"
     # 양쪽에서 유래할 수 있어 rcept_no가 여러 개일 수 있음 - 더 일찍 공시된(가장 오래된) 값을 채택
     # (룩어헤드 바이어스 방지 관점에서 보수적인 선택: 실제로 그 정보를 알 수 있었던 가장 이른 시점)
     earliest_rcept = stacked.filter(F.col("rcept_no").isNotNull()).groupBy(*keys) \
         .agg(F.min("rcept_no").alias("rcept_no"))
     result = result.join(earliest_rcept, on=keys, how="left")
+
+    # currency는 (2026-07-31 실측) 종목에 따라 서로 다른 rcept_no(정정공시 등)가 서로 다른
+    # 표시통화를 쓰는 경우가 실제로 있다(예: 950190이 rcept A에서는 HKD, rcept B에서는 USD로
+    # 공시). earliest_rcept 결정 *이전에* F.first(ignorenulls=True)로 currency만 따로 뽑으면
+    # 셔플 순서에 따라 currency가 rcept_no와 다른 공시에서 왔을 수 있는 비결정적 불일치가
+    # 생긴다(실측: 4개 (stock_code,fs_div,year) 조합에서 currency가 2종 섞임, 그중 950190은
+    # 실제로 다른 통화가 섞여 있어 진짜 위험). earliest_rcept로 결정된 그 rcept_no에 실제로
+    # 달린 currency를 조인해 가져오면 rcept_no와 currency가 항상 같은 공시 출처를 보장한다.
+    currency = stacked.filter(F.col("currency").isNotNull()) \
+        .select(*keys, "rcept_no", "currency").distinct()
+    result = result.join(
+        currency, on=[*keys, "rcept_no"], how="left"
+    )
 
     return result
 
