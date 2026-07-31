@@ -192,7 +192,13 @@ valuepick-batch/
 
 ---
 
-## 7. 하지 말아야 할 것
+## 7. Git 커밋
+
+- 커밋 메시지에 `Co-Authored-By: Claude ...` 트레일러를 넣지 않는다. 작업자 표시 없이 사용자 본인이 작성한 것처럼 남긴다.
+
+---
+
+## 8. 하지 말아야 할 것
 
 - 기존 `ValuePick`(Spring Boot, MySQL) 프로덕션 코드·스케줄러·DB를 건드리지 않는다. 완전히 분리된 리포다.
 - MySQL을 Spark 잡 간 중간 데이터 전달 용도로 쓰지 않는다. 전부 Parquet.

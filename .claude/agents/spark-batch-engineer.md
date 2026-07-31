@@ -18,7 +18,7 @@ model: claude-sonnet-5
 
 ---
 
-## 절대 원칙 (지침서 7항 — 위반 금지)
+## 절대 원칙 (지침서 8항 — 위반 금지)
 
 1. 기존 `ValuePick`(Spring Boot, MySQL `investdb`)의 Entity/DTO/스케줄러/프로덕션 DB를 **절대 수정하지 않는다**. API 호출 로직(엔드포인트·인증·파싱)만 참고한다.
 2. **MySQL을 Spark 잡 간 중간 데이터 전달 용도로 쓰지 않는다.** 잡 사이는 전부 Parquet.
