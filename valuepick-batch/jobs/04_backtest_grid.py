@@ -1,9 +1,13 @@
 """
 04_backtest_grid.py - 전략 그리드 백테스트 (PROJECT_INSTRUCTIONS.md 4.4, 프로젝트 핵심)
 
-역할: conf/strategies.yaml에 정의된 전략 조합(PER상한 x PBR상한 x 배당수익률하한 x 리밸런싱주기 x
-보유종목수) 각각에 대해, 매 리밸런싱 시점마다 조건에 맞는 종목으로 포트폴리오를 구성하고 다음
-리밸런싱 시점까지 보유했을 때의 수익률을 계산해 누적 성과(누적수익률/MDD/샤프비율)를 산출한다.
+역할: 기존 ValuePick(Spring Boot) Top100Service.scoreAll()과 동일한 "7팩터 백분위 가중합산 점수"
+방식으로 종목을 스크리닝한다. conf/strategies.yaml에 정의된 전략 조합(리밸런싱주기 x
+portfolio_size x 가중치프리셋) 각각에 대해, 매 리밸런싱 시점마다 F-Score 필터를 통과한 종목 중
+점수 상위 N종목으로 포트폴리오를 구성하고 다음 리밸런싱 시점까지 보유했을 때의 수익률을 계산해
+누적 성과(누적수익률/MDD/샤프비율)를 산출한다.
+(2026-07-31 이전의 PER상한 x PBR상한 x 배당수익률하한 문턱값 그리드 버전은
+jobs/04_backtest_grid_threshold.py로 보존)
 
 리밸런싱 시점: 재무제표(사업보고서)는 연 1회만 확보되어 있어 스크리닝 기준 자체를 월별/분기별로
 갱신할 수는 없다. 대신 "재무 기준은 그 시점 이전 가장 최근 공시된 사업보고서를 계속 사용하되,
@@ -19,19 +23,21 @@
   만족하는 연도가 여럿이면(예: 2021년치와 2022년치 사업보고서가 모두 이미 공시됨) 그중 가장 최근
   공시된 것을 사용한다.
 
-종목 선정 기준: 조건(PER/PBR/배당수익률)을 만족하는 종목이 portfolio_size보다 많으면 PER이 낮은
-(더 저평가된) 순으로 상위 N종목을 선택한다. 동일 비중(1/N)으로 매수했다고 가정한다.
-
-배당수익률 null 처리: dividend_yield_min이 설정된 전략에서 배당액이 없는 종목은 "조건 불충족(제외)"으로
-처리한다(screen_portfolio의 condition 참고) - null을 조건을 만족한 것으로 잘못 통과시키지 않기 위함.
-배당 원본은 FY2020~2023 4개 연도가 모두 수집되어 있고, indicators 기준 연도별 950여 종목에
-dividend_amount가 존재한다(2026-07-31 실측). 따라서 배당 조건 전략의 선별 결과가 특정 시점에
-0건으로 나온다면 "데이터가 없어서 정상"이 아니라 조인·조건 로직을 의심해야 한다.
+종목 선정 기준 (Top100Service.scoreAll() 재현):
+  1) F-Score 필터: induty_code가 없는(업종 미분류) 종목은 후보에서 제외. induty_code 앞 2자리가
+     64/65/66(금융업)이면 F-Score 필터를 면제, 그 외는 f_score >= 6만 통과.
+  2) 점수 계산: PER/PBR/부채비율(낮을수록 고점수)과 ROE/ROA/EPS성장률/모멘텀(높을수록 고점수)
+     7개 팩터를 (전략, 리밸런싱 시점) 단위로 순위 매긴 뒤 percentileFraction((n-1-rank)/(n-1))으로
+     변환하고 전략별 가중치를 곱해 합산(0~1). null은 불리한 쪽 극값으로 채워 최하위 순위 취급.
+  3) 점수 상위 portfolio_size종목을 동일비중(1/N)으로 매수했다고 가정한다.
+  배당수익률은 Top100Service.scoreAll()이 애초에 점수 팩터로 쓰지 않으므로 이 스크리닝에 포함하지
+  않는다(compute_point_in_time_ratios가 계산은 하지만 여기서는 사용 안 함).
 
 입력:
   - conf/strategies.yaml
   - data/indicators (year 파티셔닝, rcept_no 포함)
   - data/cleaned/prices (snapshot_type=current)
+  - data/raw/companies (induty_code 포함 - F-Score 금융업 예외 판정용)
 출력: data/backtest_results (전략별 리밸런싱 구간 수익률 + 전략별 최종 성과 요약)
 """
 
@@ -181,11 +187,47 @@ def compute_point_in_time_ratios(df: DataFrame) -> DataFrame:
     return df
 
 
+def apply_fscore_filter(indicators: DataFrame, companies: DataFrame) -> DataFrame:
+    """Top100Service.candidates 필터 재현: induty_code가 없는 종목은 제외, 금융업(앞 2자리
+    64/65/66)은 F-Score 필터 면제, 그 외는 f_score IS NOT NULL AND f_score >= 6만 통과.
+    companies는 04번 main()이 --market 필터와 무관하게 induty_code까지 셀렉트해서 넘긴다 -
+    F-Score/금융업 필터는 --market 옵션과 별개로 항상 적용된다."""
+    ind = indicators.join(companies.select("stock_code", "induty_code"), on="stock_code", how="inner")
+    ind = ind.filter(F.col("induty_code").isNotNull())
+    is_financial = F.substring(F.col("induty_code"), 1, 2).isin("64", "65", "66")
+    passes_fscore = F.col("f_score").isNotNull() & (F.col("f_score") >= 6)
+    return ind.filter(is_financial | passes_fscore)
+
+
+def add_percentile_rank(df: DataFrame, value_col: str, rank_col: str, partition_cols: list[str],
+                         ascending: bool, fill_value: float) -> DataFrame:
+    """Top100Service의 ascRank/descRank + percentileFraction을 그대로 재현한다.
+    - null은 불리한 쪽 극값(fill_value)으로 채워 최하위 순위를 받도록 한다
+      (낮을수록 좋은 지표는 +inf, 높을수록 좋은 지표는 -inf - MAX_VALUE/-MAX_VALUE와 동일한 역할).
+      이 극값은 순위를 매기는 데만 쓰이고 점수 계산 자체에는 원본 값이 들어가지 않으므로 안전하다.
+    - F.row_number()는 1-based라 -1을 해서 Java의 0-based rank(ascRank/descRank)와 맞춘다.
+    - ascending=True면 오름차순(가장 작은 값이 rank 0) = ascRank, False면 내림차순(가장 큰 값이
+      rank 0) = descRank.
+    - percentileFraction(rank, n) = n<=1이면 1.0, 아니면 (n-1-rank)/(n-1).
+    - (전략, 리밸런싱 시점) 단위로 partition_cols를 지정해야 서로 다른 가중치프리셋/시점의 종목이
+      한 순위표에 섞이지 않는다."""
+    filled = F.coalesce(F.col(value_col), F.lit(fill_value))
+    order_expr = filled.asc() if ascending else filled.desc()
+    w = Window.partitionBy(*partition_cols).orderBy(order_expr)
+    n_col = F.count(F.lit(1)).over(Window.partitionBy(*partition_cols))
+    rank0 = F.row_number().over(w) - 1
+    percentile = F.when(n_col <= 1, F.lit(1.0)).otherwise(
+        (n_col - 1 - rank0).cast("double") / (n_col - 1).cast("double")
+    )
+    return df.withColumn(rank_col, percentile)
+
+
 def screen_portfolio(spark: SparkSession, indicators: DataFrame, prices_by_date: DataFrame,
-                      strategies: DataFrame, rebalance_dates: list[str]) -> DataFrame:
-    """전략별로 조건을 만족하는 종목 중 PER 낮은 순 상위 portfolio_size종목을, 리밸런싱 시점
-    전체에 대해 한 번에 선정한다. prices_by_date는 prices_at_dates의 출력(모든 시점의 stock_code당
-    1행 스냅샷이 rebalance_date 컬럼으로 이미 구분되어 있음)을 그대로 넘긴다.
+                      strategies: DataFrame, companies: DataFrame, rebalance_dates: list[str]) -> DataFrame:
+    """전략별로 F-Score 필터를 통과한 종목 중 7팩터 백분위 가중합산 점수(value_score) 상위
+    portfolio_size종목을, 리밸런싱 시점 전체에 대해 한 번에 선정한다(Top100Service.scoreAll() 재현).
+    prices_by_date는 prices_at_dates의 출력(모든 시점의 stock_code당 1행 스냅샷이 rebalance_date
+    컬럼으로 이미 구분되어 있음)을 그대로 넘긴다.
 
     벡터화: 원래는 이 함수가 rebalance_date 스칼라 하나만 받아 시점 하나를 처리했고, 호출부
     (run_for_rebalance_group)가 시점 수만큼 파이썬 for문으로 이 함수를 호출해 unionByName으로
@@ -194,31 +236,52 @@ def screen_portfolio(spark: SparkSession, indicators: DataFrame, prices_by_date:
     1,010,833자, 정비례 대비 2.6배). 시점을 rebalance_date 컬럼을 가진 데이터로 다뤄 한 번의
     crossJoin(전략)으로 처리하면 계획 조각이 시점 수와 무관하게 1개로 고정된다."""
     ind = latest_valid_indicators(spark, indicators, rebalance_dates)
+    ind = apply_fscore_filter(ind, companies)
 
-    # 가격 조인은 crossJoin(전략 테이블) 이전에 수행 - 전략 수(1,000)만큼 행이 불어나기 전에
+    # 가격 조인은 crossJoin(전략 테이블) 이전에 수행 - 전략 수(21,870)만큼 행이 불어나기 전에
     # (종목 수 x 시점 수) 규모에서 끝내는 것이 훨씬 저렴하다. join 키에 rebalance_date를 추가해
     # 같은 종목이라도 시점이 다르면 섞이지 않게 한다. inner join: 그 시점 가격이 없는 종목은
     # 애초에 매매 불가하므로 스크리닝 대상에서 자연히 제외된다.
     ind_priced = ind.join(prices_by_date, on=["stock_code", "rebalance_date"], how="inner")
     ind_priced = compute_point_in_time_ratios(ind_priced)
 
-    # 전략 수 x (종목 수 x 시점 수) 조합 생성 (작은 전략 테이블을 브로드캐스트해 셔플 최소화)
+    # 전략 수(21,870) x (종목 수 x 시점 수) 조합 생성. 전략 테이블이 작아(1.9MB 안팎, 컬럼 10개
+    # 안팎) autoBroadcastJoinThreshold(10MB)보다 작으므로 broadcast로 셔플을 없앤다.
     joined = ind_priced.crossJoin(F.broadcast(strategies))
 
-    condition = (
-        (F.col("per_t") > 0) & (F.col("per_t") <= F.col("per_max"))
-        & (F.col("pbr_t") > 0) & (F.col("pbr_t") <= F.col("pbr_max"))
-        & (
-            F.col("dividend_yield_min").isNull()
-            | (F.col("dividend_yield_t").isNotNull() & (F.col("dividend_yield_t") >= F.col("dividend_yield_min")))
-        )
-    )
-    eligible = joined.filter(condition)
+    # 랭킹은 (전략, 리밸런싱 시점) 단위로 매겨야 한다 - "전략"이 이제 가중치프리셋까지 포함한
+    # 식별자(name)이므로, name이 프리셋을 유일하게 식별하는 한 이 partitionBy 패턴이 그대로
+    # 안전하다. rebalance_date를 빠뜨리면 서로 다른 시점의 종목들이 한 랭킹에 섞이는 조용한
+    # 버그가 된다.
+    partition_cols = ["name", "rebalance_date"]
+    joined = add_percentile_rank(joined, "per_t", "per_pctl", partition_cols,
+                                  ascending=True, fill_value=float("inf"))
+    joined = add_percentile_rank(joined, "pbr_t", "pbr_pctl", partition_cols,
+                                  ascending=True, fill_value=float("inf"))
+    joined = add_percentile_rank(joined, "debt_ratio", "debt_ratio_pctl", partition_cols,
+                                  ascending=True, fill_value=float("inf"))
+    joined = add_percentile_rank(joined, "roe", "roe_pctl", partition_cols,
+                                  ascending=False, fill_value=float("-inf"))
+    joined = add_percentile_rank(joined, "roa", "roa_pctl", partition_cols,
+                                  ascending=False, fill_value=float("-inf"))
+    joined = add_percentile_rank(joined, "eps_growth_rate", "eps_growth_pctl", partition_cols,
+                                  ascending=False, fill_value=float("-inf"))
+    joined = add_percentile_rank(joined, "momentum", "momentum_pctl", partition_cols,
+                                  ascending=False, fill_value=float("-inf"))
 
-    # 시점이 섞여 있으므로 랭킹도 (전략, 시점) 단위로 매겨야 한다. rebalance_date를 빠뜨리면
-    # 서로 다른 시점의 종목들이 한 랭킹 안에 섞이는 조용한 버그가 된다.
-    w = Window.partitionBy("name", "rebalance_date").orderBy(F.col("per_t").asc())
-    ranked = eligible.withColumn("rank", F.row_number().over(w))
+    scored = joined.withColumn(
+        "value_score",
+        F.col("per_pctl") * F.col("weight_per")
+        + F.col("pbr_pctl") * F.col("weight_pbr")
+        + F.col("roe_pctl") * F.col("weight_roe")
+        + F.col("roa_pctl") * F.col("weight_roa")
+        + F.col("debt_ratio_pctl") * F.col("weight_debt_ratio")
+        + F.col("eps_growth_pctl") * F.col("weight_eps_growth")
+        + F.col("momentum_pctl") * F.col("weight_momentum"),
+    )
+
+    w_rank = Window.partitionBy(*partition_cols).orderBy(F.col("value_score").desc())
+    ranked = scored.withColumn("rank", F.row_number().over(w_rank))
     selected = ranked.filter(F.col("rank") <= F.col("portfolio_size"))
 
     return selected.select("name", "stock_code", "portfolio_size", "rebalance_date")
@@ -334,7 +397,7 @@ def summarize_performance(period_returns: DataFrame) -> DataFrame:
 
 
 def run_for_rebalance_group(spark: SparkSession, indicators: DataFrame, prices: DataFrame,
-                             strategies: DataFrame, years: list[str], rebalance: str,
+                             strategies: DataFrame, companies: DataFrame, years: list[str], rebalance: str,
                              split_flags: DataFrame) -> tuple[DataFrame, DataFrame]:
     """monthly 또는 quarterly 그룹 전략들에 대해 리밸런싱 시점 생성부터 성과 요약까지 전체 파이프라인 실행.
     시점 수(monthly 36개, quarterly 12개)만큼 screen_portfolio를 반복 호출해 union하면 DataFrame
@@ -352,7 +415,7 @@ def run_for_rebalance_group(spark: SparkSession, indicators: DataFrame, prices: 
     # 순회하던 것과 동일한 의미로, screen_portfolio에 넘기는 시점 목록에서 마지막 시점을 제외한다.
     buy_dates = rebalance_dates[:-1]
     buy_prices_by_date = prices_by_date.filter(F.col("rebalance_date").isin(buy_dates))
-    portfolios = screen_portfolio(spark, indicators, buy_prices_by_date, group_strategies, buy_dates)
+    portfolios = screen_portfolio(spark, indicators, buy_prices_by_date, group_strategies, companies, buy_dates)
     portfolios = portfolios.cache()
     portfolios.count()  # 캐시를 즉시 실체화해 이후 단계에서 lineage 재계산이 일어나지 않게 함
 
@@ -391,12 +454,18 @@ def main():
     print(f"전략 조합 로드 완료: {strategies.count()}개")
 
     indicators = spark.read.parquet(args.indicators_dir)
+
+    # induty_code는 --market 필터와 무관하게 F-Score 금융업 예외 판정(apply_fscore_filter)에
+    # 항상 필요하다. --market이 걸리면 companies 자체를 그 시장으로 좁혀서 induty_code 조인
+    # 대상도 자연히 좁아지게 한다(사용자 확인: "F-Score/금융업 필터는 --market과 별개로 항상 적용,
+    # 단 04번이 코스피를 추가로 하드코딩하지는 않음" - 기존 --market 옵션 이상으로 시장을 제한하지 않음).
+    companies = spark.read.parquet(args.companies_dir).select("stock_code", "corp_cls", "induty_code")
     if args.market != "ALL":
         corp_cls = "Y" if args.market == "KOSPI" else "K"
-        companies = spark.read.parquet(args.companies_dir).filter(F.col("corp_cls") == corp_cls)
-        market_codes = companies.select("stock_code").distinct()
-        indicators = indicators.join(F.broadcast(market_codes), on="stock_code", how="inner")
-        print(f"--market {args.market} 필터 적용: 대상 종목 {market_codes.count()}개")
+        companies = companies.filter(F.col("corp_cls") == corp_cls)
+        indicators = indicators.join(F.broadcast(companies.select("stock_code")), on="stock_code", how="inner")
+        print(f"--market {args.market} 필터 적용: 대상 종목 {companies.count()}개")
+    companies = companies.cache()
 
     # monthly(36개)+quarterly(12개) 총 48개 리밸런싱 시점에서 반복 참조되므로 캐싱해 재스캔 방지
     indicators = indicators.cache()
@@ -414,7 +483,7 @@ def main():
     summary_all = []
     for rebalance in ("monthly", "quarterly"):
         period_returns, summary = run_for_rebalance_group(
-            spark, indicators, prices, strategies, years, rebalance, split_flags
+            spark, indicators, prices, strategies, companies, years, rebalance, split_flags
         )
         period_returns_all.append(period_returns)
         summary_all.append(summary)
@@ -433,6 +502,7 @@ def main():
     for df in period_returns_all + summary_all:
         df.unpersist()
     indicators.unpersist()
+    companies.unpersist()
     split_flags.unpersist()
 
     spark.stop()

@@ -31,6 +31,7 @@ from pyspark.sql import SparkSession
 KRX_LISTED_URL = "https://apis.data.go.kr/1160100/service/GetKrxListedInfoService/getItemInfo"
 STOCK_PRICE_URL = "https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo"
 DART_CORP_CODE_URL = "https://opendart.fss.or.kr/api/corpCode.xml"
+DART_COMPANY_URL = "https://opendart.fss.or.kr/api/company.json"
 DART_FINANCIAL_URL = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
 DART_DIVIDEND_URL = "https://opendart.fss.or.kr/api/alotMatter.json"
 
@@ -97,6 +98,19 @@ def already_ingested_values(spark: SparkSession, path: str, partition_col: str) 
     return {row[partition_col] for row in df.select(partition_col).distinct().collect()}
 
 
+def existing_induty_codes(spark: SparkSession, companies_path: str) -> dict[str, str]:
+    """companies에 이미 저장된 induty_code를 stock_code 기준으로 조회 (companies는 매번 overwrite라
+    bas_dt 파티션 단위 already_ingested()가 안 걸리므로, induty_code만 별도로 종목 단위 캐시해
+    company.json 재호출을 막는다). induty_code 컬럼이 없는(과거 실행분) companies는 빈 맵 반환."""
+    if not os.path.exists(companies_path):
+        return {}
+    df = spark.read.parquet(companies_path)
+    if "induty_code" not in df.columns:
+        return {}
+    rows = df.select("stock_code", "induty_code").filter(df["induty_code"].isNotNull()).collect()
+    return {row["stock_code"]: row["induty_code"] for row in rows}
+
+
 # ── 1. KRX 상장종목 수집 (JSON) ─────────────────────────────────────────
 def fetch_krx_listed(stock_api_key: str, bas_dt: str) -> list[dict]:
     """KRX 상장종목 정보 조회 (KOSPI+KOSDAQ), DartCompanyCollector.collectKrxStockInfo와 동일 로직"""
@@ -152,6 +166,16 @@ def fetch_dart_corp_code_map(dart_api_key: str, listed_stock_codes: set[str]) ->
         corp_code = (el.findtext("corp_code") or "").strip()
         stock_to_corp[stock_code] = corp_code
     return stock_to_corp
+
+
+# ── 2-1. DART company.json 기업개황 수집 (업종코드) ─────────────────────
+def fetch_company_induty_code(dart_api_key: str, corp_code: str) -> str | None:
+    """DART 기업개황 조회로 induty_code(표준산업분류코드, 3~5자리) 획득 (DartCompanyCollector.collectIndustryInfo와 동일)"""
+    params = {"crtfc_key": dart_api_key, "corp_code": corp_code}
+    body = request_dart_json_with_retry(DART_COMPANY_URL, params, retry_count=MAX_RETRY)
+    if body is None or body.get("status") != "000":
+        return None
+    return body.get("induty_code")
 
 
 # ── 3. 주가 수집 (JSON, 기준일 1회 호출로 전 종목 수신) ─────────────────────
@@ -290,12 +314,31 @@ def main():
     corp_code_map = fetch_dart_corp_code_map(dart_api_key, stock_codes)
     print(f"DART corpCode 매핑 완료: {len(corp_code_map)}건")
 
+    companies_path = f"{args.data_dir}/companies"
+
+    # ── 1-1단계: DART company.json으로 induty_code(업종코드) 수집 ─────────
+    # 04번 가치주 점수 전환의 F-Score 금융업(64/65/66) 예외 판정에 필요. companies는 매번 overwrite라
+    # bas_dt 단위 already_ingested()가 안 걸리므로, 이미 induty_code를 받은 종목은 existing_induty_codes로
+    # 걸러 재호출하지 않는다 (전 종목 재실행 시 DART 콜 낭비 방지).
+    cached_induty_codes = existing_induty_codes(spark, companies_path)
+    induty_codes: dict[str, str | None] = {}
+    for s in krx_stocks:
+        code = s["stock_code"]
+        if code not in corp_code_map:
+            continue
+        if code in cached_induty_codes:
+            induty_codes[code] = cached_induty_codes[code]
+            continue
+        induty_codes[code] = fetch_company_induty_code(dart_api_key, corp_code_map[code])
+        time.sleep(SLEEP_SEC)
+    print(f"DART 업종코드(induty_code) 수집 완료: {sum(1 for v in induty_codes.values() if v)}건")
+
     companies = [
-        {**s, "corp_code": corp_code_map[s["stock_code"]], "bas_dt": args.bas_dt}
+        {**s, "corp_code": corp_code_map[s["stock_code"]], "bas_dt": args.bas_dt,
+         "induty_code": induty_codes.get(s["stock_code"])}
         for s in krx_stocks if s["stock_code"] in corp_code_map
     ]
 
-    companies_path = f"{args.data_dir}/companies"
     spark.createDataFrame(companies).write.mode("overwrite") \
         .partitionBy("bas_dt").parquet(companies_path)
     print(f"companies 저장 완료: {companies_path}")

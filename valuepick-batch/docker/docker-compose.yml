@@ -17,6 +17,7 @@ services:
       - DART_API_KEY=${DART_API_KEY}
       - STOCK_API_KEY=${STOCK_API_KEY}
       - EXIM_API_KEY=${EXIM_API_KEY}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
     ports:
       - "7077:7077"   # 워커/드라이버가 접속하는 마스터 RPC 포트
       - "8088:8080"   # Spark 마스터 웹 UI (클러스터 상태, 워커 목록, 등록된 애플리케이션 확인)
