@@ -137,7 +137,7 @@ ValuePick `Top100Service.scoreAll()`과 동일한 7팩터 백분위 가중합산
 일반 인덱스를 바로 걸 수 없어(prefix 길이 지정 필요), 이후 ValuePick 프론트엔드/API가 이
 테이블을 이름으로 조회·조인해야 하면 성능 문제가 될 수 있다.
 
-## ALL vs KOSPI 결과 이상치 원인 규명 — w0682_monthly_n3 사례 (2026-08-02)
+## ALL vs KOSPI 결과 이상치 원인 규명 — w0682_monthly_n3 사례 (2026-08-01)
 
 KOSPI 실행 결과 최고 성과 전략 `w0682_monthly_n3`(+134.5%, ALL 최고 +85.8%보다 높음)가
 왜 이렇게 높은지 실측으로 원인을 추적했다(`notebooks/check_04_market_compare.ipynb` 섹션 7).

@@ -52,17 +52,19 @@ ValuePick 본 서비스는 매일 새벽 배치로 전 종목의 투자지표를
 
 Docker Compose 기반 Spark Standalone 클러스터(master 1 + worker 2, 총 4 cores)와, 실패 원인 규명을 위한 History Server, 검증용 Jupyter, 최종 서빙용 MySQL로 구성됩니다.
 
-<img src="docs/img/cluster-architecture.png" width="800" alt="Spark 클러스터 구성도" />
+<img src="docs/img/cluster-architecture.png" width="640" alt="Spark 클러스터 구성도" />
 
-상세 이미지 : [링크](https://jsh340866.github.io/Apache-Spark/cluster-architecture.html)
+상세 이미지 : [링크](https://jsh340866.github.io/Apache-Spark/cluster-architecture.html) — 주요 설정값(`shuffle.partitions`, `executor.memory` 등)과 그 선택 이유 포함
+
+<br/>
 
 ### 데이터 파이프라인
 
 외부 API에서 수집한 원천 데이터가 5단계 Spark 잡을 거쳐 최종 백테스트 결과로 이어집니다. **잡 사이의 데이터 전달은 전부 Parquet**이며, MySQL은 마지막 서빙 단계에서만 사용합니다.
 
-<img src="docs/img/data-pipeline.png" width="800" alt="데이터 파이프라인" />
+<img src="docs/img/data-pipeline.png" width="640" alt="데이터 파이프라인" />
 
-상세 이미지 : [링크](https://jsh340866.github.io/Apache-Spark/data-pipeline.html)
+상세 이미지 : [링크](https://jsh340866.github.io/Apache-Spark/data-pipeline.html) — 각 잡의 핵심 처리 로직 상세 포함
 
 > `data/backtest_results/`(접미사 없는 구버전)는 룩어헤드 바이어스 수정 이전 산출물이라 참조하지 않습니다. 최신 결과는 `_score_all` / `_score_kospi`입니다.
 
@@ -165,6 +167,14 @@ Docker Compose 기반 Spark Standalone 클러스터(master 1 + worker 2, 총 4 c
 | 평균 | -9.75% | +5.69% |
 | 범위 | -64.1% ~ +85.8% | -34.6% ~ +134.5% |
 
+> **전략 이름 읽는 법** — `w0682_monthly_n3`은 `w{가중치프리셋번호}_{리밸런싱주기}_n{보유종목수}` 규칙입니다.
+> 즉 "682번 가중치 조합으로 점수를 매겨, 매달 리밸런싱하며, 상위 3종목만 보유"라는 뜻입니다.
+> 번호가 실제로 어떤 가중치인지는 [아래 조회 방법](#전략-번호로-가중치-조합-확인하기) 참고.
+
+<br/>
+
+---
+
 ### 2. 보유 종목 수가 성과 분산을 지배한다
 
 점수 방식 그리드에서 상·하위 성과 전략이 **거의 전부 `n3`(3종목 집중)**였습니다. 소수 종목에 몰아넣으면 한 종목의 등락이 전체를 좌우해 **잘 되면 크게, 안 되면 크게** 튑니다.
@@ -177,11 +187,19 @@ Docker Compose 기반 Spark Standalone 클러스터(master 1 + worker 2, 총 4 c
 
 <img src="docs/img/portfolio-size-curve-threshold.png" width="750" alt="문턱값 그리드 portfolio_size별 누적수익률 추이" />
 
+<br/>
+
+---
+
 ### 3. 이 표본에서는 PBR 가중치가 유리, 모멘텀이 불리했다
 
 <img src="docs/img/factor-correlation.png" width="600" alt="팩터별 가중치 상관계수" />
 
 가중치 프리셋 2,187개를 팩터별 가중치와 평균 성과로 상관분석한 결과입니다. `weight_pbr`이 +0.505로 가장 강한 양의 상관, `weight_momentum`이 -0.362로 가장 강한 음의 상관을 보였습니다. 2021~2023년이 하락/횡보장이었다는 점을 감안하면 "추세 추종(모멘텀)이 불리하고 저평가 지표가 방어적이었다"는 해석과 맞아떨어집니다.
+
+<br/>
+
+---
 
 ### 4. 최고 성과 전략을 뜯어보니 — 로직의 승리가 아니었다
 
@@ -210,6 +228,46 @@ KOSPI 1위 `w0682_monthly_n3`(+134.5%)가 왜 그렇게 높았는지 추적했�
 
 > **결론**: 이 최고 성과는 로직이 저평가 우량주를 찾아낸 사례가 아니라, **이익의 질(quality of earnings)을 검증하지 못하는 정량 스크리닝의 구조적 한계**가 로직과 무관한 실제 주가 급등과 우연히 타이밍이 맞아떨어진 결과입니다. 21,870번 시도하면 그중 하나는 이런 우연과 겹칠 확률이 낮지 않다는 것이, 그리드 탐색 결과를 그대로 신뢰하면 안 되는 이유입니다.
 
+<br/>
+
+---
+
+### 전략 번호로 가중치 조합 확인하기
+
+`w0682` 같은 번호는 3<sup>7</sup>=2,187개 조합 중 몇 번째인지를 나타내는 순번일 뿐이라, 그 자체로는 어떤 팩터를 강조했는지 알 수 없습니다. 실제 가중치는 세 가지 방법으로 확인할 수 있습니다.
+
+**① 노트북에서 조회** — `check_04_market_compare.ipynb` 섹션 6에서 `target_name`만 바꾸면 표와 그래프로 즉시 확인됩니다.
+
+```python
+target_name = "w0682_monthly_n3"   # 여기만 바꾸면 됨
+```
+
+**② `conf/strategies.yaml`에서 직접 찾기**
+
+```bash
+grep -A 8 "name: w0682_monthly_n3" conf/strategies.yaml
+```
+
+**③ MySQL에서 성과와 함께 조회**
+
+```sql
+SELECT * FROM strategy_performance_kospi WHERE name = 'w0682_monthly_n3';
+```
+
+실제로 `w0682`가 어떤 조합인지 확인하면 이렇습니다 — ValuePick 원본 가중치 대비 **PBR·ROE를 크게 높이고 PER·부채비율은 낮춘** 조합입니다.
+
+<img src="docs/img/w0682-weights.png" width="620" alt="w0682 가중치 구성" />
+
+| 팩터 | 이 전략 | ValuePick 원본 | 차이 |
+|---|---|---|---|
+| PER | 14.7% | 25% | **-10.3%p** |
+| PBR | 24.5% | 15% | **+9.5%p** |
+| ROE | 29.4% | 20% | **+9.4%p** |
+| ROA | 9.8% | 10% | -0.2%p |
+| 부채비율 | 4.9% | 15% | **-10.1%p** |
+| EPS성장률 | 6.9% | 5% | +1.9%p |
+| 모멘텀 | 9.8% | 10% | -0.2%p |
+
 <details>
 <summary><b>다른 시각화 더 보기</b></summary>
 
@@ -220,10 +278,6 @@ KOSPI 1위 `w0682_monthly_n3`(+134.5%)가 왜 그렇게 높았는지 추적했�
 **문턱값 그리드 — 조건 × 보유종목수 히트맵**
 
 <img src="docs/img/threshold-heatmap.png" width="500" alt="조건별 히트맵" />
-
-**`w0682` 가중치 구성 (ValuePick 원본 대비)**
-
-<img src="docs/img/w0682-weights.png" width="600" alt="w0682 가중치" />
 
 </details>
 
