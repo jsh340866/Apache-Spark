@@ -103,14 +103,13 @@ services:
       - spark-net
 
   # 개발/검증용 대화형 환경 - PySpark 커널로 03단계 지표 검증 노트북 등을 실행
+  # jupyter/pyspark-notebook(Python 3.11) 대신 워커/마스터와 동일한 apache/spark:3.5.0(Python 3.8)
+  # 베이스로 직접 빌드 - PYTHON_VERSION_MISMATCH 근본 해결. 상세: Dockerfile.jupyter 주석
   jupyter:
-    image: jupyter/pyspark-notebook:spark-3.5.0
+    build:
+      context: .
+      dockerfile: Dockerfile.jupyter
     container_name: valuepick-jupyter
-    environment:
-      - JUPYTER_ENABLE_LAB=yes
-      # 파일탐색기 루트를 /opt/spark-apps로 지정 (기본 루트 /home/jovyan/work 밖이라 안 보이던 문제 해결)
-      # 로컬 전용 개발 환경이라 토큰/비밀번호 인증 비활성화 (매번 토큰 입력 번거로움 방지)
-      - NOTEBOOK_ARGS=--ServerApp.root_dir=/opt/spark-apps --ServerApp.token='' --ServerApp.password=''
     working_dir: /opt/spark-apps
     ports:
       - "8888:8888"

@@ -443,6 +443,29 @@ rcept_no와 currency가 다른 공시 출처에서 올 수 있었음. `earliest_
 **하지 않기로 결정**: 워커 2대 vs 4대 스케일링 벤치마크는 더 이상 진행하지 않는다
 (2026-08-01 사용자 결정). 과거 시도 이력(6-2 항목, 위 참고)은 기록으로만 남긴다.
 
+### [해결] Jupyter/워커 Python 버전 불일치 (2026-08-01)
+기존엔 `jupyter/pyspark-notebook:spark-3.5.0`(Python 3.11)을 썼는데, 워커/마스터는
+`apache/spark:3.5.0`(Python 3.8.10)이라 드라이버(Jupyter)가 `spark.createDataFrame()`으로
+파이썬 객체를 워커에 보내는 연산마다 `PYTHON_VERSION_MISMATCH`가 났던 문제. 이전 시도(워커에
+Python 3.11 설치, `apache/spark:3.5.9-python3`로 교체)는 전부 막혀 `toPandas()` 우회로
+남아있었다(위 08-01 세션 기록 참고).
+
+**해결**: 반대 방향으로 접근 — Jupyter 쪽을 워커와 동일한 `apache/spark:3.5.0` 베이스로 직접
+빌드(`docker/Dockerfile.jupyter` 신규, `docker-compose.yml`의 `jupyter` 서비스를 `image:`에서
+`build:`로 변경). jupyterlab/pandas/numpy/matplotlib을 pip로 설치하되, 이 베이스가
+Python 3.8이라 각 라이브러리의 3.8 호환 마지막 버전(pandas 2.0.3/numpy 1.24.4/
+matplotlib 3.7.5)으로 고정 — pandas 2.1+/numpy 2.x는 3.9 이상을 요구해 설치 자체가 실패함을
+빌드 중 실측 확인.
+
+**검증**: 재빌드 후 `python3 --version`이 3.8.10으로 확인. `spark.createDataFrame()`을 드라이버
+(Jupyter 컨테이너)에서 직접 실행해 워커까지 정상 처리됨을 확인(`PYTHON_VERSION_MISMATCH` 재현
+안 됨). 기존 노트북 `check_04_backtest.ipynb`를 `nbconvert --execute`로 전체 재실행해 에러 없이
+완료됨도 확인. `verify_indicators.ipynb`는 ValuePick 로컬 DB 컨테이너가 별도로 떠 있어야 하는
+사전조건이라(이번 새 이미지와 무관) 검증 범위에서 제외.
+
+**주의**: 새 이미지는 `apache/spark:3.5.0` 베이스라 Spark 홈 경로가 기존 `jupyter/pyspark-notebook`과
+다르다(`/opt/spark` — 워커/마스터와 동일). 아래 "PYTHONPATH" 항목도 이 변경으로 함께 갱신됨.
+
 ## 운영상 유의사항 (실측으로 확인된 것만)
 
 - `spark-submit`에 `--properties-file /opt/spark-apps/conf/spark-defaults.conf`를 빠뜨리면 클러스터 모드가 아닌 드라이버 로컬 모드로 실행되어 워커 분산이 전혀 안 됨
@@ -451,7 +474,7 @@ rcept_no와 currency가 다른 공시 출처에서 올 수 있었음. `earliest_
 - Spark가 모든 애플리케이션 소요시간(`Duration`)을 마스터 UI(`localhost:8088`)에 자동 기록하므로 `time` 명령이 불필요. REST API `/api/v1/applications`로도 조회 가능
 - Jupyter 노트북 커널을 탭만 닫고 종료하지 않으면 클러스터 코어를 계속 점유해 다른 잡이 대기 상태에 빠짐 → `spark.stop()` 또는 Kernel Shut Down
 - `.ipynb`를 코드로 직접 수정한 뒤에는 Jupyter 탭을 닫았다 새로 열 것. 브라우저 탭이 이전 버전을 물고 있으면 저장 시 디스크의 최신 수정사항이 통째로 덮어써짐(2회 발생). `.ipynb`는 `Edit`이 아닌 `NotebookEdit`으로 셀 단위 수정
-- Jupyter 컨테이너에서 `docker exec`로 `pyspark`를 쓰려면 `PYTHONPATH=/usr/local/spark/python/lib/py4j-*.zip:/usr/local/spark/python`을 별도 지정해야 함 (Jupyter 서버가 커널을 띄울 때만 주입되는 값)
+- Jupyter 컨테이너에서 `docker exec`로 `pyspark`를 쓰려면 `PYTHONPATH=/opt/spark/python/lib/py4j-*.zip:/opt/spark/python`을 별도 지정해야 함 (Jupyter 서버가 커널을 띄울 때만 주입되는 값. 2026-08-01 Jupyter 이미지를 `apache/spark:3.5.0` 베이스로 교체하며 경로가 `/usr/local/spark`→`/opt/spark`로 바뀜)
 - 컨테이너 상태를 바꾸기 전에 `docker inspect <container> --format '{{json .Mounts}}'`로 실제 마운트 경로가 `Apache-Spark\valuepick-batch`인지 확인할 것 (이전 세션의 마운트 혼동으로 데이터 폴더를 삭제한 사고가 있었음)
 - Windows Git Bash에서 `docker exec`에 절대경로 인자를 쓸 때는 `MSYS_NO_PATHCONV=1`을 앞에 붙일 것
 - Docker Desktop이 리소스 압박으로 응답 불가에 빠져도 컨테이너는 정지 상태로 남을 뿐 삭제되지 않음 (`docker stop` ≠ `docker rm`)

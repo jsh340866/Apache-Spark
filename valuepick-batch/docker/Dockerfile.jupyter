@@ -1,0 +1,27 @@
+# jupyter/pyspark-notebook:spark-3.5.0(Python 3.11) 대신 워커/마스터와 동일한
+# apache/spark:3.5.0(Python 3.8.10) 베이스를 써서 PYTHON_VERSION_MISMATCH를 근본 해결한다.
+# spark.createDataFrame() 등 드라이버(Jupyter)가 파이썬 객체를 워커로 보내는 연산은
+# 드라이버/워커 파이썬 마이너 버전이 같아야 하는데, 서로 다른 배포처 이미지를 섞어 쓰면
+# 이 전제가 깨진다. 상세: PROGRESS.md "Jupyter/워커 Python 버전 불일치" 항목.
+FROM apache/spark:3.5.0
+
+USER root
+# jupyterlab: 노트북 서버. requests/PyYAML: Dockerfile.spark와 동일(잡 코드 재사용 대비).
+# pandas/numpy/matplotlib: notebooks/*.ipynb가 실제로 import하는 패키지만 포함(과설치 방지).
+# 버전은 Python 3.8과 호환되는 각 라이브러리의 마지막 릴리스로 고정
+# (pandas 2.1+/numpy 2.x/matplotlib 3.9+는 3.9 이상을 요구해 이 베이스에서 설치 불가).
+RUN pip install --no-cache-dir \
+    jupyterlab==4.2.5 \
+    requests==2.32.3 \
+    PyYAML==6.0.2 \
+    pandas==2.0.3 \
+    numpy==1.24.4 \
+    matplotlib==3.7.5
+
+WORKDIR /opt/spark-apps
+
+# 토큰/비밀번호 인증 비활성화 - 로컬 전용 개발 환경이라 매번 토큰 입력을 피하기 위함
+# (기존 jupyter/pyspark-notebook의 NOTEBOOK_ARGS 환경변수 방식과 동일한 효과, 이 베이스 이미지엔
+# 그 시작 스크립트가 없어 커맨드에 옵션을 직접 지정한다)
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", \
+     "--ServerApp.token=", "--ServerApp.password="]
