@@ -19,3 +19,7 @@ derby.log
 # logs/*.py(검증·디버그 스크립트)는 코드라 커밋 대상. 로그·이벤트만 제외한다.
 logs/*.log
 logs/events/
+
+# 데이터·문서 아카이브 (재생성 가능하거나 폴더로 이미 존재)
+data.zip
+docs/spark-learning.zip

@@ -146,7 +146,9 @@ OOM으로 죽었다.
 
 ## 5. ValuePick(Spring Boot)과의 관계
 
-valuepick-batch는 기존 ValuePick 서비스와 완전히 분리된 리포다. `프로젝트/valuepick/`의
+valuepick-batch는 기존 ValuePick 서비스와 완전히 분리된 리포다. ValuePick 본 서비스는
+[별도 리포](https://github.com/project-valuepick/valuepick)에서 관리되며, 로컬에 내려받은
+`프로젝트/valuepick/`(이 리포에는 커밋하지 않음)의
 Java 코드는 API 호출 로직(엔드포인트·인증·파싱)과 스크리닝/점수 로직을 참고하는 용도로만
 읽으며, Entity/DTO/스케줄러/프로덕션 MySQL(`investdb`)은 절대 수정하지 않는다.
 

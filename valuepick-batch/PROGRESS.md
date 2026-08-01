@@ -81,7 +81,9 @@
 
 ### 진단용 노트북
 - [x] `notebooks/check_04_backtest.ipynb` — 성과 랭킹, monthly/quarterly 비교, 특정 전략 시계열, held_count 추이, null 결과 확인
-- [x] `notebooks/check_04_01_backtest.ipynb` — KOSPI 워커 2대 vs 4대 결과 비교
+- ~~`notebooks/check_04_01_backtest.ipynb` — KOSPI 워커 2대 vs 4대 결과 비교~~ **파일 삭제됨**
+  (커밋 `8b5fe16` "노트북/로그 정리"에서 제거. 워커 스케일링 벤치마크 자체를 진행하지
+  않기로 결정했으므로 복원하지 않음 — 2026-08-02 확인)
 - [ ] `notebooks/check_04_02_backtest.ipynb` — 이상치(`split_suspected`) 제외 + 보유종목수 상한없음(n=ALL) 진단. Python for루프 70회 `unionByName` 방식이 Catalyst 재분석 지연/드라이버 OOM을 일으켜 `crossJoin` + `Window.partitionBy(..., "rebalance_date")` 벡터화로 재작성했으나 **최종 실행 검증 미완**
 
 ### 백테스트 결과 해석 (버그 아님을 실측 검증)
@@ -306,11 +308,66 @@ rcept_no와 currency가 다른 공시 출처에서 올 수 있었음. `earliest_
 04번 점수 방식 재작성 및 21,870개 전략 ALL 시장 실행, 결과 검증 노트북 2종 결과 해석 작성).
 아래는 남은 항목.
 
-1. **KOSPI 버전 04번 실행 — 다음 세션(2026-08-02)에 진행하기로 결정**. 종목 수 사전 확인
-   완료: 전체 2,555종목 중 KOSPI(corp_cls='Y') 810종목/KOSDAQ 1,745종목 — KOSPI만 필터링
-   하면 종목 수가 약 1/3로 줄어 ALL 실행보다 빠를 것으로 예상(단, 정확한 배율은 미실측).
-   실행 시 `--output-dir`을 `data/backtest_results_score_kospi` 등으로 ALL과 분리해서
-   Parquet이 서로 안 겹치게 할 것
+### [완료] KOSPI 버전 04번 실행 + MySQL 4개 테이블 적재 (2026-08-02)
+- `--market KOSPI --output-dir data/backtest_results_score_kospi`로 21,870개 전략 실행,
+  에러 없이 완료(대상 종목 810개). 검증: summary 21,870행(name 전부 유일), period_returns
+  503,010행, null 없음. **최고 성과 `w0682_monthly_n3` +134.5%** (ALL 최고 +85.8%보다 높음
+  — market 범위에 따라 최고 성과 전략과 수치가 달라진다는, 기존 문턱값 그리드 때도 확인됐던
+  패턴이 점수 방식에서도 재현됨)
+- 05번을 `--market ALL`, `--market KOSPI` 순서로 각각 실행 → MySQL
+  `strategy_performance_all`(21,870행)/`_kospi`(21,870행),
+  `backtest_results_all`(503,010행)/`_kospi`(503,010행) 4개 테이블 전부 Parquet과 행 수
+  일치 확인. `market` 컬럼값도 정확
+### [완료] `notebooks/check_04_market_compare.ipynb` 신규 작성 — ALL vs KOSPI 비교 (2026-08-02)
+`check_04_backtest.ipynb`(ALL 단일 분석)와 별개로 새 노트북 분리 — "관점이 다르면 파일을
+나눈다"는 기존 패턴(threshold/점수 방식 분리와 동일 이유). 섹션 구성:
+- 1~4: 최종수익률 분포 비교(히스토그램), 각 market 최고 성과 10개, 동일 전략(name) ALL/KOSPI
+  대조(산점도 포함), portfolio_size별 market 차이
+- 5: 결과 해석 — **동일 전략 21,870개 전부 대조 가능, 그중 19,045개(약 87%)에서 KOSPI가
+  (노트북 셀 출력은 소수점 반올림 후 비교라 19,008로 표시됨 — 정확한 값은 MySQL 원본
+  기준 19,045개, ALL 우세 2,825개. 2026-08-02 재확인)**
+  ALL보다 높았음**. 격차 최대 +142.3%p(`w0638_monthly_n3`). KOSDAQ의 소형/저유동성 종목이
+  하락장에서 ALL 평균을 끌어내렸을 가능성(추정) — **KOSDAQ 단독 실행으로 검증할지 논의한 결과
+  하지 않기로 결정함(2026-08-02, 사용자 지시: "코스닥은 필요없어 코스피만 했으면 충분해").
+  이 추정은 확정 사실이 아니라 가설로만 남겨두고 더 이상 진행하지 않음**
+- 6: 가중치 조합 조회 기능 — `target_name` 변수만 바꾸면 임의 전략(예: `w0682_monthly_n3`)의
+  7팩터 가중치를 ValuePick 원본과 대조하는 표/막대그래프 출력
+- 7: **사례 조사 — KOSPI 최고 성과 `w0682_monthly_n3`(+134.5%)가 왜 이렇게 높은지 실측**
+  (아래 상세)
+
+### [완료] `w0682_monthly_n3` 급등 원인 조사 (2026-08-02)
+사용자 질문("코스피 n3는 왜 이리 수익률이 높지?")에 대한 실측 조사.
+- 구간별 수익률 확인: 2022-10-31~11-30 구간이 **+59.9%**로 압도적 1위(다음 2022-12-31~
+  2023-01-31 +31.5%, 2023-05-31~06-30 +25.0%)
+- 그 구간 KOSPI 전체 종목 등락률을 직접 조회(가격 데이터에서 재계산) — 인디에프+147.6%,
+  F&F홀딩스+110.7%, 코오롱글로벌+109.7%, STX+102.9% 등 실제로 여러 종목이 한 달 새
+  100% 넘게 폭등한 것을 확인(가공 수치 아님)
+- 이 급등이 `split_suspected`(액면분할 의심, 하루 등락률 -40%/+67% 기준) 필터 버그로 새는
+  건 아닌지 확인 — **상위 5개 종목 전부 플래그 0건.** 하루 급등이 아니라 한 달에 걸친
+  점진적 상승이라 이상치 필터 대상이 아니었을 뿐, 04번의 필터링 로직 자체는 정상 작동
+- **결론**: `w0682_monthly_n3`의 높은 수익률은 가중치 조합(스크리닝 로직) 자체의 우수성이
+  아니라, 좁은 KOSPI 후보군(810종목)에서 n3(3종목 집중)가 이 특정 3년 동안 우연히 폭등
+  종목을 포함했을 가능성이 높음. `check_04_backtest.ipynb`/`_threshold.ipynb`에서 이미
+  반복 확인된 "n이 작을수록 소수 종목 이상치에 성과가 좌우된다"는 패턴과 일치 — **이걸
+  "n3 KOSPI 전략이 우수하다"로 해석하면 안 되고, 오히려 "n3는 표본이 작아 신뢰도가
+  낮다"는 근거로 읽어야 함.** 이 원인 분석 전체가 노트북 섹션 7에 재현 가능한 형태로
+  포함돼 있음(수동 조사가 아니라 셀 실행으로 같은 결과가 나옴, CLI 사전 조사와 노트북
+  실행 결과 정확히 일치 확인)
+
+### [완료] w0682_monthly_n3 실제 매수 3종목 재현 + F&F홀딩스 착시 분석 (2026-08-02)
+- 04번 실제 함수(`apply_fscore_filter`/`latest_valid_indicators`/`compute_point_in_time_ratios`/
+  `add_percentile_rank`)를 그대로 재사용해 2022-10-31 시점 KOSPI 스크리닝을 재현 — 실제
+  매수 3종목은 **F&F홀딩스(007700)/KISCO홀딩스(001940)/금호건설(002990)**. 3종목 동일비중
+  평균 수익률(+59.9%)이 04번 실제 계산값과 소수점까지 일치 — 스크리닝~수익률 계산 파이프라인
+  종단간 검증 완료
+- F&F홀딩스가 뽑힌 근거(PER 0.26/PBR 0.21/ROE 79.93%/EPS성장률 +2244.71%)를 연도별
+  net_income_krw와 대조 — 2020년 853억→2021년 2조14억(23배)→2022년 4,176억(1/5로 급감).
+  **지속 가능한 실적 개선이 아니라 일회성 회계 이벤트**(원본 재무제표 "당기순이익조정을
+  위한 가감" 항목이 2021년 -1조6,570억원). F-Score(6점, 필터 통과)도 이 착시를 못 걸러냄
+- **결론**: 이 사례는 "가치 있는 저평가주 발견"이 아니라 "이익의 질을 검증 못하는 정량
+  스크리닝의 구조적 한계 + 로직과 무관한 실제 주가 급등의 우연한 타이밍 겹침"으로 정리.
+  상세 근거와 해석은 `docs/VALIDATION.md` 참고 — 그리드 탐색이 찾아낸 "최고 성과"가 왜
+  일반화 근거가 될 수 없는지를 구체 사례로 뒷받침함
 2. **05번(`jobs/05_export_to_mysql.py`) MySQL 테이블명을 market별로 분리** (2026-08-01) —
    기존엔 테이블명이 `strategy_performance`/`backtest_results`로 고정이라 다른 market으로
    재실행하면 이전 결과가 truncate로 지워지는 문제가 있었음. `--market` 값을 소문자
@@ -319,11 +376,9 @@ rcept_no와 currency가 다른 공시 출처에서 올 수 있었음. `earliest_
    재실행은 그 테이블만 truncate, 다른 market 테이블은 영향 없음. `market` 컬럼은 테이블
    안에서도 바로 구분되도록 그대로 유지. 기존 고정 이름 테이블(오늘 적재한 ALL 결과)은
    Parquet(`backtest_results_score_all`)에 동일 데이터가 남아있어 손실 없이 DROP TABLE로
-   정리함 — 현재 MySQL은 테이블이 아예 없는 빈 상태. **다음 세션에서 KOSPI 04번 실행 후,
-   05번을 `--market ALL`(Parquet은 이미 있음, `data/backtest_results_score_all`)과
-   `--market KOSPI` 두 번 실행해서 `strategy_performance_all`/`_kospi`,
-   `backtest_results_all`/`_kospi` 4개 테이블을 한 번에 채우기로 결정 (2026-08-01, 사용자
-   지시 — ALL을 따로 먼저 넣지 않고 KOSPI와 같이 처리)**
+   정리함. **완료(2026-08-02)**: KOSPI 04번 실행 후 05번을 `--market ALL`,
+   `--market KOSPI` 순서로 실행해 4개 테이블 전부 채움 — 위 "KOSPI 버전 04번 실행 + MySQL
+   4개 테이블 적재" 항목 참고
 ### [완료] `docs/` 3종(ARCHITECTURE/VALIDATION/PERFORMANCE) + README.md 전면 재작성 (2026-08-01)
 - `docs/ARCHITECTURE.md`(172줄): 파이프라인 개요, 클러스터 구성, Parquet 레이크 구조,
   04번 벡터화 설계(crossJoin+Window로 계획 조각 1개 고정), ValuePick과의 관계, 05번이
