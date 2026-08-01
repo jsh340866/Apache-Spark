@@ -304,7 +304,6 @@ SELECT * FROM strategy_performance_kospi WHERE name = 'w0682_monthly_n3';
 
 8. [룩어헤드 바이어스 — "최신가 고정 PER"의 함정](#8-룩어헤드-바이어스--최신가-고정-per의-함정)
 9. [MDD 계산에서 자산곡선 시작점이 빠져 있던 문제](#9-mdd-계산에서-자산곡선-시작점이-빠져-있던-문제)
-10. [금융업 F-Score 예외를 위해 데이터 소스를 새로 뚫다](#10-금융업-f-score-예외를-위해-데이터-소스를-새로-뚫다)
 
 <details>
 <summary><b>펼쳐서 자세히 보기</b></summary>
@@ -489,16 +488,6 @@ with_peak = with_cum.withColumn(
     F.greatest(F.max("cum_return").over(w.rowsBetween(Window.unboundedPreceding, 0)), F.lit(0.0)),
 )
 ```
-
-### 10. 금융업 F-Score 예외를 위해 데이터 소스를 새로 뚫다
-
-ValuePick의 점수 로직을 재현하려는데, **금융업 판정에 필요한 `induty_code`가 Spark 쪽 데이터에 아예 없었습니다.**
-
-원인을 추적해보니 01번이 DART `corpCode.xml`(고유번호 목록)만 호출하고, 업종코드가 들어있는 `company.json`(기업개황)은 한 번도 호출한 적이 없었습니다. F-Score는 유동비율·매출총이익률처럼 제조업 재무구조를 전제한 항목이 섞여 있어 금융업에는 구조적으로 안 맞기 때문에, 이 예외 처리 없이는 재현이 불가능했습니다.
-
-01번에 `fetch_company_induty_code()`를 추가했는데, 여기서 **기존 재수집 방지 로직을 그대로 쓸 수 없다는 문제**가 있었습니다. `companies`는 매 실행마다 `overwrite`되는 구조라 파티션 단위 `already_ingested()`가 걸리지 않기 때문입니다. 그래서 종목 단위 캐시(`existing_induty_codes()`)를 최소 형태로 새로 추가했습니다.
-
-**결과**: 전체 2,555종목 `induty_code` 확보. F-Score 필터 통과율은 2023년 기준 2,368종목 중 1,127종목(약 48%, 금융업 예외 142종목 포함)으로, 과도하게 걸러내지도 무의미하게 통과시키지도 않는 합리적 수준임을 확인했습니다.
 
 </details>
 
