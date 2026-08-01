@@ -72,8 +72,9 @@ KRX/DART/공공데이터포털 API 응답을 원본 그대로 Parquet으로 저�
 
 ### 05_export_to_mysql.py — MySQL 서빙
 
-04번 출력(summary/period_returns)을 Spark JDBC writer로 MySQL `strategy_performance`/
-`backtest_results` 테이블에 적재한다. 상세 배경은 6절.
+04번 출력(summary/period_returns)을 Spark JDBC writer로 MySQL
+`strategy_performance_{all|kospi}`/`backtest_results_{all|kospi}` 테이블(market별 분리)에
+적재한다. 상세 배경은 6절.
 
 ## 2. Docker Compose 클러스터 구성
 
@@ -82,7 +83,7 @@ KRX/DART/공공데이터포털 API 응답을 원본 그대로 Parquet으로 저�
 | 서비스 | 역할 |
 |---|---|
 | `spark-master` | 클러스터 마스터. 잡 스케줄링·워커 리소스 배분. `spark-submit`도 이 컨테이너에서 실행(드라이버가 여기서 뜸). 8088(마스터 UI)·4040(드라이버/애플리케이션 UI)·7077(RPC) 포트 노출 |
-| `spark-worker-1`, `spark-worker-2` | 실제 태스크(파티션 단위 작업) 실행 노드. 각각 2코어. 메모리는 실행 환경마다 다르게 설정(학원 2G / 집 3G — `docs/ENVIRONMENT.md` 참고). 워커 2대 구성은 1대→2대 스케일링 효과를 실측하기 위함(`docker-compose.yml` 상단 주석) |
+| `spark-worker-1`, `spark-worker-2` | 실제 태스크(파티션 단위 작업) 실행 노드. 각각 2코어. 메모리는 실행 환경마다 다르게 설정(컴퓨터 A 2G / 컴퓨터 B 3G — `docs/ENVIRONMENT.md` 참고) |
 | `spark-history` | 잡 종료 후에도 실행 이력을 조회하기 위한 History Server. 드라이버 UI(4040)는 잡이 죽으면 같이 사라지므로, `spark.eventLog.dir`에 쌓인 이벤트 로그를 읽어 사후 재구성한다(18080 포트). 도입 배경은 `PERFORMANCE.md` 참고 |
 | `jupyter` | 검증·진단용 대화형 환경(PySpark 커널). `notebooks/*.ipynb` 실행 |
 | `mysql` | 05번 최종 결과 서빙 전용. 호스트 포트 3307로 분리해 기존 ValuePick MySQL(3306)과 충돌 방지 |
@@ -169,6 +170,9 @@ CLAUDE.md/PROGRESS.md의 원칙은 "MySQL을 Spark 잡 간 중간 데이터 전�
 ValuePick(Spring Boot) 프론트엔드/API가 조회할 대상이며, 파이프라인 내부에서 순환하는
 중간 데이터가 아니다.
 
-적재 방식은 매 실행마다 테이블을 truncate하고 전체 재삽입한다(`--input-dir`/`--market` 값만
-`market` 컬럼으로 모든 행에 채워 넣음). run_id별 이력 관리는 현재 요구사항 밖이라 과설계로
-판단해 제외했다 — "최신 백테스트 결과 1벌"만 서빙하면 되는 요구사항이기 때문이다.
+테이블 자체를 market별로 분리한다(`strategy_performance_all`/`_kospi`,
+`backtest_results_all`/`_kospi`) — `--market` 인자에 따라 대상 테이블명이 정해지고,
+적재 방식은 매 실행마다 그 테이블을 truncate하고 전체 재삽입한다(`market` 컬럼도 모든
+행에 채워 넣어 어느 실행 결과인지 남긴다). run_id별 이력 관리는 현재 요구사항 밖이라
+과설계로 판단해 제외했다 — "각 market의 최신 백테스트 결과 1벌"만 서빙하면 되는
+요구사항이기 때문이다.

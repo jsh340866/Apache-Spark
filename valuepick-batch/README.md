@@ -509,7 +509,7 @@ ValuePick의 점수 로직을 재현하려는데, **금융업 판정에 필요�
 | 이슈 | 상태 | 내용 |
 |---|---|---|
 | Jupyter/워커 Python 버전 불일치 | **미해결(우회)** | Jupyter 컨테이너(3.11)와 워커(3.8)의 마이너 버전이 달라, 노트북에서 `spark.createDataFrame()`으로 파이썬 객체를 워커에 보내면 `PYTHON_VERSION_MISMATCH` 발생. 워커에 3.11 설치를 시도했으나 Ubuntu 20.04 저장소에 없고 deadsnakes PPA도 실패. 현재는 `toPandas()` 후 pandas 처리로 우회 |
-| MySQL `name` 컬럼이 `LONGTEXT` | **미해결** | Spark JDBC writer의 스키마 추론 결과. 인덱스를 바로 걸 수 없어 향후 조회 성능 이슈 가능. `createTableColumnTypes` 옵션으로 해결 가능하나 미적용 |
+| MySQL `name` 컬럼이 `LONGTEXT` | **해결** | `createTableColumnTypes` 옵션으로 `name VARCHAR(50)`/`market VARCHAR(10)` 명시. 기존 테이블 DROP 후 재실행해 4개 테이블 전부 스키마 갱신 및 행 수 일치 확인 |
 | 워커 2대 vs 4대 스케일링 벤치마크 | **중단** | 워커 추가 시 호스트 메모리(7.7GB) 대비 과다 할당으로 Docker Desktop이 응답 불가에 빠짐(2회). 정식 비교값을 얻지 못한 채 중단, 재개 계획 없음 |
 | `F.log(period_return + 1.0)` NaN | **미해결(낮음)** | `period_return <= -1`(전액 손실)이면 NaN이 되어 이후 누적이 오염됨. 실제 데이터에서 발생하지 않아 우선순위 낮음 |
 | 21,870개 실행 총 소요시간 | **미측정** | 성공/실패와 산출물 수치는 기록했으나 정확한 실행 시간을 남기지 않음. 1,000개(1분 7초)와는 셔플 파티션 조건이 달라 직접 비교 불가 |
@@ -584,6 +584,8 @@ cd docker && docker compose up -d
 | MySQL | localhost:3307 | 최종 결과 (`valuepick_backtest` DB) |
 
 ### 3. 파이프라인 실행
+
+> 아래는 **로컬 검증용 실행 방법**입니다. 사람이 순서대로 `spark-submit`을 실행하는 방식은 1인 학습 프로젝트라 채택한 단순화입니다.
 
 ```bash
 # 01 — 원천 수집 (연도별)

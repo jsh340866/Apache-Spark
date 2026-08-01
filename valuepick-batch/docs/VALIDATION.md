@@ -132,10 +132,13 @@ ValuePick `Top100Service.scoreAll()`과 동일한 7팩터 백분위 가중합산
 실제 MySQL 조회로 행 수를 확인했다. `strategy_performance` 21,870행, `backtest_results`
 503,010행 — 04번 Parquet 원본(summary/period_returns)과 행 수가 정확히 일치했다.
 
-**미해결 이슈**: `name` 컬럼이 MySQL에서 `LONGTEXT`로 생성됐다(Spark JDBC writer가 string
-타입을 스키마 추론 시 이렇게 매핑한 것으로 보이나, 직접 원인 확인은 하지 않음). `LONGTEXT`는
-일반 인덱스를 바로 걸 수 없어(prefix 길이 지정 필요), 이후 ValuePick 프론트엔드/API가 이
-테이블을 이름으로 조회·조인해야 하면 성능 문제가 될 수 있다.
+**[해결] `name` 컬럼 LONGTEXT 이슈**: `name` 컬럼이 MySQL에서 `LONGTEXT`로 생성됐던 원인은
+Spark JDBC writer가 string 타입을 스키마 추론 시 이렇게 매핑하기 때문이다. `jdbc_write()`에
+`createTableColumnTypes` 옵션(`name VARCHAR(50), market VARCHAR(10)`)을 추가해 해결했다. 단
+이 옵션은 테이블이 없을 때(최초 생성)만 적용되므로, 기존 4개 테이블을 전부 DROP한 뒤 05번을
+`--market ALL`/`--market KOSPI`로 재실행해 검증했다 — `DESCRIBE`로 `name`/`market`이
+`varchar(50)`/`varchar(10)`로 바뀐 것과, 행 수(21,870/503,010, ALL·KOSPI 동일)가 이전과
+정확히 일치하는 것을 확인했다(2026-08-01).
 
 ## ALL vs KOSPI 결과 이상치 원인 규명 — w0682_monthly_n3 사례 (2026-08-01)
 

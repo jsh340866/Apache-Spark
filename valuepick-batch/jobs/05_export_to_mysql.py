@@ -47,13 +47,17 @@ def jdbc_write(df: DataFrame, table: str, url: str, password: str) -> None:
     테이블이 아직 없는 최초 실행에서는 truncate할 대상이 없으므로 이 옵션이 무시되고 Spark가
     자동으로 테이블을 만든다 - JDBC writer 자체의 동작이며, 이 잡이 별도로 분기 처리하지 않는다).
     테이블명이 market별로 분리되어 있으므로, 이 truncate는 해당 market 테이블에만 적용되고
-    다른 market의 테이블은 건드리지 않는다."""
+    다른 market의 테이블은 건드리지 않는다.
+    createTableColumnTypes는 최초 생성(테이블이 없을 때) 시에만 적용된다 - name/market은 문자열
+    컬럼이라 Spark가 기본으로 LONGTEXT로 추론하는데, 실제 값은 최대 20자 내외(예:
+    w0682_monthly_n3)라 인덱스를 걸 수 있는 VARCHAR로 명시한다."""
     df.write.format("jdbc") \
         .option("url", url) \
         .option("dbtable", table) \
         .option("user", "root") \
         .option("password", password) \
         .option("truncate", "true") \
+        .option("createTableColumnTypes", "name VARCHAR(50), market VARCHAR(10)") \
         .mode("overwrite") \
         .save()
 

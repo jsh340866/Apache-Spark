@@ -432,12 +432,13 @@ rcept_no와 currency가 다른 공시 출처에서 올 수 있었음. `earliest_
   (기존 `DART_API_KEY` 등과 같은 패턴), `spark-master` 컨테이너 재생성으로 반영 확인
 - 실행 검증: `--input-dir data/backtest_results_score_all --market ALL`로 실제 적재 →
   `strategy_performance` 21,870행, `backtest_results` 503,010행 — Parquet 원본과 행 수 정확히 일치
-- **[미해결 이슈] `name` 컬럼이 MySQL에서 `longtext`로 생성됨** — Spark JDBC writer가
-  DataFrame의 string 타입을 스키마 추론 시 `LONGTEXT`로 매핑한 것으로 보인다(직접 원인 확인은
-  안 함). `LONGTEXT`는 일반 인덱스를 바로 걸 수 없어(prefix 길이 지정 필요), 이후 기존
-  ValuePick 프론트엔드/API가 이 테이블을 이름으로 조회하거나 조인해야 하면 성능 문제가 될 수
-  있음. 필요해지면 `.option("createTableColumnTypes", "name VARCHAR(255)")` 같은 JDBC 옵션으로
-  타입을 명시하는 방향 검토할 것
+- **[해결, 2026-08-01] `name` 컬럼이 MySQL에서 `longtext`로 생성되던 문제** — Spark JDBC
+  writer가 DataFrame의 string 타입을 스키마 추론 시 `LONGTEXT`로 매핑한 것이 원인.
+  `jdbc_write()`에 `.option("createTableColumnTypes", "name VARCHAR(50), market VARCHAR(10)")`
+  추가로 해결. 이 옵션은 테이블이 없을 때만 적용되므로 기존 4개 테이블(`strategy_performance_
+  {all|kospi}`, `backtest_results_{all|kospi}`)을 전부 DROP 후 05번 재실행 — `DESCRIBE`로
+  `name`/`market`이 `varchar(50)`/`varchar(10)`로 바뀐 것, 행 수(21,870/503,010)가 재실행
+  전후로 동일한 것을 실측 확인
 
 **하지 않기로 결정**: 워커 2대 vs 4대 스케일링 벤치마크는 더 이상 진행하지 않는다
 (2026-08-01 사용자 결정). 과거 시도 이력(6-2 항목, 위 참고)은 기록으로만 남긴다.

@@ -20,36 +20,36 @@ docker info --format "{{.MemTotal}} {{.NCPU}}"
 
 ## 환경 비교
 
-| | 학원 컴퓨터 | 집 컴퓨터 |
+| | 컴퓨터 A | 컴퓨터 B |
 |---|---|---|
 | **Docker VM 가용 메모리** | **미측정** | **15.59GiB** (16,739,577,856 bytes) |
 | Windows 물리 메모리 (참고용) | 7.7GB | 31.9GB |
 | 논리 코어 (Docker NCPU) | 미측정 | 6 |
 | 측정일 | PROGRESS.md 기록 | 2026-07-31 |
 
-학원 컴퓨터의 7.7GB는 PROGRESS.md에 남은 값인데 **Windows 총량인지 Docker VM 값인지 불명확하다.**
+컴퓨터 A의 7.7GB는 PROGRESS.md에 남은 값인데 **Windows 총량인지 Docker VM 값인지 불명확하다.**
 Windows 총량이었다면 실제 Docker 가용량은 4GB 안팎이었을 수 있고,
 그렇다면 2026-07-30~31의 04번 반복 실패가 훨씬 잘 설명된다.
-학원 복귀 시 위 `docker info` 명령으로 먼저 실측해 이 표를 채울 것.
+컴퓨터 A로 돌아가면 위 `docker info` 명령으로 먼저 실측해 이 표를 채울 것.
 
 ## 바꿔야 할 3곳
 
-| # | 파일 | 항목 | 학원 | 집(VM 15.59GiB) |
+| # | 파일 | 항목 | 컴퓨터 A | 컴퓨터 B (VM 15.59GiB) |
 |---|---|---|---|---|
 | 1 | `docker/docker-compose.yml` | spark-worker-1 `--memory` | `2G` | `3G` |
 | 2 | `docker/docker-compose.yml` | spark-worker-2 `--memory` | `2G` | `3G` |
 | 3 | `conf/spark-defaults.conf` | `spark.executor.memory` | `1g` | `2g` |
 | 4 | (spark-submit CLI 플래그) | `--driver-memory` | `3g` | `4g` |
 
-집 환경 예약량 합계: 워커 3G×2 + 드라이버 4g + 나머지 컨테이너 약 1.2GB = **약 11.2GB / 15.59GiB**.
+컴퓨터 B 예약량 합계: 워커 3G×2 + 드라이버 4g + 나머지 컨테이너 약 1.2GB = **약 11.2GB / 15.59GiB**.
 
 > 위 3곳 외에 클러스터 스펙이 **서술로만** 적힌 곳이 더 있다.
 > 값을 바꾸면 함께 갱신할 것: `.claude/CLAUDE.md` 5절(매 세션 자동 로드되므로 가장 중요),
 > `valuepick-batch/README.md` 아키텍처 다이어그램, `docs/spark-learning/02_파티션.md`.
 
 `--cores 2`와 `spark.sql.shuffle.partitions 4`는 **양쪽 환경에서 동일하게 유지**한다.
-집 컴퓨터가 6코어이긴 하지만 코어 수를 바꾸면 셔플 파티션 수도 같이 조정해야 하고,
-그러면 학원 환경과 성능 비교가 불가능해진다.
+컴퓨터 B가 6코어이긴 하지만 코어 수를 바꾸면 셔플 파티션 수도 같이 조정해야 하고,
+그러면 컴퓨터 A와 성능 비교가 불가능해진다.
 
 ### 왜 워커 메모리와 executor 메모리를 둘 다 바꿔야 하나
 
@@ -85,13 +85,16 @@ docker exec spark-worker-1 ps aux | grep Xmx
 실제로는 엉뚱한 경로에 쓰고 있어서 옛 설정으로 두 번이나 잡을 돌린 사고가 있었다.
 **설정 파일 내용이 아니라 실행 중인 프로세스의 실제 값을 확인한다.**
 
-## 미해결 검증 항목
+## [해결됨] 04번 3연속 실패 원인
 
-2026-07-30~31 세션에서 04번(`04_backtest_grid.py`)이 세 번 연속 실패했는데,
-executor 자체의 힙 부족인지 호스트 7.7GB의 메모리 압박인지 **분리 검증을 못 했다**
+2026-07-30~31 세션에서 04번(`04_backtest_grid.py`)이 세 번 연속 실패했을 때는
+executor 자체의 힙 부족인지 호스트 7.7GB의 메모리 압박인지 분리 검증을 못 한 상태였다
 (실행 중 Docker Desktop이 응답 불가에 빠져 판단이 흐려짐).
 
-집 컴퓨터에서는 호스트 메모리 여유가 충분하므로 이 변수가 제거된다.
-여기서 04번이 성공하면 "호스트 압박이 원인이었다"는 쪽에 무게가 실리고,
-여기서도 실패하면 04번 코드 자체(crossJoin 규모, 캐시 전략)의 문제로 좁혀진다.
-학원 복귀 후 같은 잡을 2G/1536m으로 돌려보면 이 가설을 양쪽에서 확인할 수 있다.
+이후 조사에서 둘 다 원인이 아니었다는 것이 밝혀졌다 — 실제 원인은 리밸런싱 시점마다
+파이썬 for문으로 `screen_portfolio()`를 반복 호출해 `unionByName`으로 이어붙이는 구조가
+매 union마다 Catalyst 옵티마이저의 실행계획 재분석 비용을 초선형으로 키운 것이었고, 이
+비용은 executor가 아니라 **드라이버**가 전부 부담하고 있었다(워커는 2.5GB/3GB로 놀고
+있었음). `crossJoin` + `Window.partitionBy(..., "rebalance_date")` 벡터화로 해결했고,
+이후 컴퓨터 B에서 21,870개 전략까지 정상 완주했다. 상세 원인·실측치는
+`ARCHITECTURE.md` 4절, `PERFORMANCE.md` 1절 참고.
