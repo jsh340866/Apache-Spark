@@ -54,7 +54,7 @@ Docker Compose 기반 Spark Standalone 클러스터(master 1 + worker 2, 총 4 c
 
 <img src="docs/img/cluster-architecture.png" width="800" alt="Spark 클러스터 구성도" />
 
-상세 이미지 : [링크](docs/cluster-architecture.html)
+상세 이미지 : [링크](https://jsh340866.github.io/Apache-Spark/cluster-architecture.html)
 
 ### 데이터 파이프라인
 
@@ -62,7 +62,7 @@ Docker Compose 기반 Spark Standalone 클러스터(master 1 + worker 2, 총 4 c
 
 <img src="docs/img/data-pipeline.png" width="800" alt="데이터 파이프라인" />
 
-상세 이미지 : [링크](docs/data-pipeline.html)
+상세 이미지 : [링크](https://jsh340866.github.io/Apache-Spark/data-pipeline.html)
 
 > `data/backtest_results/`(접미사 없는 구버전)는 룩어헤드 바이어스 수정 이전 산출물이라 참조하지 않습니다. 최신 결과는 `_score_all` / `_score_kospi`입니다.
 
