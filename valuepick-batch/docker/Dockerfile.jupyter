@@ -8,6 +8,11 @@ FROM apache/spark:3.5.0
 USER root
 # jupyterlab: 노트북 서버. requests/PyYAML: Dockerfile.spark와 동일(잡 코드 재사용 대비).
 # pandas/numpy/matplotlib: notebooks/*.ipynb가 실제로 import하는 패키지만 포함(과설치 방지).
+# pyspark==3.5.0: 베이스 이미지(apache/spark:3.5.0)에 Spark 배포판 자체는 들어있지만
+# 파이썬 패키지로서의 pyspark(및 py4j)는 spark-submit이 PYTHONPATH에 자동으로 잡아주는
+# $SPARK_HOME/python/{pyspark.zip,py4j-*.zip}에만 있어, 노트북 커널처럼 spark-submit을
+# 거치지 않고 바로 `from pyspark.sql import SparkSession`을 실행하면 ModuleNotFoundError가
+# 난다(실측 확인). 워커/마스터와 동일한 3.5.0으로 고정해 버전 불일치를 피한다.
 # 버전은 Python 3.8과 호환되는 각 라이브러리의 마지막 릴리스로 고정
 # (pandas 2.1+/numpy 2.x/matplotlib 3.9+는 3.9 이상을 요구해 이 베이스에서 설치 불가).
 RUN pip install --no-cache-dir \
@@ -16,7 +21,8 @@ RUN pip install --no-cache-dir \
     PyYAML==6.0.2 \
     pandas==2.0.3 \
     numpy==1.24.4 \
-    matplotlib==3.7.5
+    matplotlib==3.7.5 \
+    pyspark==3.5.0
 
 WORKDIR /opt/spark-apps
 
