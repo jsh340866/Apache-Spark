@@ -82,11 +82,18 @@ def main():
     parser = argparse.ArgumentParser(description="02_clean_prices: 원본 시세 정제 (결측 보간 + 액면분할 의심 탐지)")
     parser.add_argument("--input-dir", default="/opt/spark-apps/data/raw/prices", help="원본 시세 Parquet 경로")
     parser.add_argument("--output-dir", default="/opt/spark-apps/data/cleaned/prices", help="정제 결과 Parquet 출력 경로")
+    parser.add_argument("--years", help="정제 대상 연도 (콤마 구분, 예: 2021,2022,2023). "
+                                         "미지정 시 raw 전체 연도를 대상으로 함 - 이 경우 raw에 섞인 "
+                                         "백테스트 무관 연도(모멘텀 백필용 스냅샷, 최신 --bas-dt 재실행분 등)까지 "
+                                         "거래일 캘린더에 포함돼 is_interpolated가 부정확해질 수 있음")
     args = parser.parse_args()
 
     spark = SparkSession.builder.appName("02_clean_prices").getOrCreate()
 
     raw = spark.read.parquet(args.input_dir)
+    if args.years:
+        years = args.years.split(",")
+        raw = raw.filter(F.col("year").isin(years))
     print(f"원본 시세 로드 완료: {raw.count()}건")
 
     # 모멘텀 계산용 스냅샷(1m_ago/12m_ago)은 정제 파이프라인(보간/분할탐지) 대상이 아님 - 원본 그대로 통과

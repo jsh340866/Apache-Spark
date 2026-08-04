@@ -49,21 +49,41 @@
    보인다(executor.memory 2g→1g 조정만으로 해결되지 않을 수 있음 - driver.memory도 같이
    확인 필요, 착수 전이라 미검증).
 
-### 다음에 할 일 (집 컴퓨터에서)
+### 집 컴퓨터에서 진행한 작업 (2026-08-04)
 
-1. `git pull`(또는 동기화)로 04_backtest_grid.py 수정 사항 반영 확인.
-2. **`data/`는 `.gitignore`에 걸려 있어 git으로 옮겨지지 않는다(확인 완료).** 즉 이 컴퓨터에서
-   실행한 2020년 시세 백필(1번 항목)은 git pull로는 집 컴퓨터에 전달되지 않는다. 집 컴퓨터의
-   `data/cleaned/prices`에 이미 2020년치가 있는지 먼저 확인하고, 없으면 아래 순서로 동일하게
-   재현해야 한다: `01_ingest_raw.py --bas-dt <그 컴퓨터에서 성공했던 bas_dt> --year 2020
-   --price-start <월말-6일> --price-end <월말>` 을 2020년 1~12월 12번 실행(한 번에 넓은
-   범위를 돌리면 네트워크 중단 시 전체 유실되니 피할 것) → `02_clean_prices.py` 재실행.
-3. `conf/spark-defaults.conf`가 집 컴퓨터 사양(주석 기준 2g)에 이미 맞게 되어 있는지 확인.
-4. `docker exec spark-master spark-submit /opt/spark-apps/jobs/04_backtest_grid.py` 로
-   전체 재실행 (21,870개 전략 x 48시점, 수분~수십분 예상).
-5. 성공하면 `data/backtest_results`가 momentum_t 기준으로 재생성됨. README.md의
-   `weight_momentum -0.362` 상관계수 및 관련 해석 문구도 새 결과로 재검증/갱신 필요
-   (이 이슈의 "영향 범위" 섹션 참고).
+1. **2020년 시세 백필 재현 완료**: `data/`가 `.gitignore`에 걸려 학원 PC의 백필 결과가 git으로
+   전달되지 않는다는 걸 확인하고(위에서 예고한 대로), 집 컴퓨터에서 동일하게 재현했다.
+   `01_ingest_raw.py --bas-dt 20260724 --year 2020 --price-start <월말-7일> --price-end <월말>`을
+   2020년 1~12월 12번 나눠 실행(companies의 기존 파티션 `bas_dt=20260724`와 동일 값 사용,
+   좁은 범위로 나눠 네트워크 중단 시 전체 유실을 피함). 12회 전부 정상 완료.
+2. **`02_clean_prices.py`에 `--years` 인자 추가**: 기존엔 `data/raw/prices` 전체 연도를 그대로
+   정제 대상으로 삼았는데, 이 리포의 raw에는 04번 백테스트 대상(2021~2023) 외에도 2020년 모멘텀
+   백필분과 최신 `--bas-dt`(2026년) 재실행 스냅샷이 섞여 있어, 거래일 캘린더가 필요 이상으로
+   넓어지는 문제가 있었다. `--years 2020,2021,2022,2023`(모멘텀 t-12개월 계산에 필요한 2020년
+   포함, 04번 무관 연도인 2025/2026 제외)으로 지정해 재실행 — `data/cleaned/prices`의 2020~2023
+   파티션만 dynamic overwrite로 갱신, 다른 연도 파티션은 그대로 유지됨을 확인.
+3. **momentum_t 커버리지 재검증 완료**: 04번의 `build_rebalance_dates`가 만드는 monthly+quarterly
+   매수 시점(유니크 35개) 전체에 대해 `months_ago(rd, 12)`/`months_ago(rd, 1)`를 계산해
+   `data/cleaned/prices`의 실제 `bas_dt`와 대조 — **커버 실패 시점 0개**. 이전에 두 검증 에이전트가
+   지적했던 "2021년 12개 시점 momentum 전부 null" 문제가 해소됨.
+4. **"보간된 행 0건"이 버그가 아님을 실측으로 확인**: `01_ingest_raw.py`의 `fetch_krx_listed`가
+   `--bas-dt`(2026년 시점) 기준 상장종목 목록으로 가격을 수집하다 보니, 2020~2023년 당시 아직
+   상장 전이었던 종목의 그 구간은 raw 자체에 시세가 없다. forward-fill은 "종목이 처음 등장한 날짜
+   이전" 구간을 채울 직전값이 없어 결측으로 남고, 02번의 "보간 불가 행 제거" 로직(107~110행)이
+   이를 걸러낸다. 실측 결과 결측 121,564건 전부가 `bas_dt < first_seen`(최초 등장일 이전)이었고,
+   그 이후 구간의 결측(진짜 거래정지 추정)은 0건 — 이 데이터셋엔 2021~2023년 구간 안에서 실제
+   거래정지로 인한 결측이 없다는 뜻이며, 정상 결과임을 `notebooks/check_02_cleaned_prices.ipynb`에
+   문서화했다(노트북도 재실행 반영 완료).
+5. `conf/spark-defaults.conf`는 이미 집 컴퓨터 사양(executor 2g)으로 맞게 설정돼 있음을 확인.
+   Docker Desktop이 WSL2에 할당한 메모리는 약 15.6GB(호스트 실물 31.9GB와 다름)로 확인됨.
+
+### 남은 작업
+
+`docker exec spark-master spark-submit --driver-memory 4g /opt/spark-apps/jobs/04_backtest_grid.py`로
+ALL/KOSPI 전체 재실행(21,870개 전략 x 48시점)하면 momentum_t 기준 `data/backtest_results_score_all|kospi`가
+재생성된다. 코드·데이터 준비는 위 1~4번으로 전부 끝난 상태라 이 명령만 실행하면 된다.
+성공하면 README.md의 `weight_momentum -0.362` 상관계수 및 관련 해석 문구도 새 결과로 재검증/갱신 필요
+(이 이슈의 "영향 범위" 섹션 참고).
 
 ## 모멘텀(momentum) 룩어헤드 바이어스 — 원본 이슈 기록 (2026-08-04)
 
