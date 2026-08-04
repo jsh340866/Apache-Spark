@@ -33,6 +33,16 @@ jobs/04_backtest_grid_threshold.py로 보존)
   배당수익률은 Top100Service.scoreAll()이 애초에 점수 팩터로 쓰지 않으므로 이 스크리닝에 포함하지
   않는다(compute_point_in_time_ratios가 계산은 하지만 여기서는 사용 안 함).
 
+모멘텀 룩어헤드 바이어스 수정 (docs/KNOWN_ISSUES.md, 2026-08-04):
+  03_build_indicators.py의 join_momentum()은 01_ingest_raw.py가 "배치 실행 시점" 단 하나에
+  대해서만 수집한 1m_ago/12m_ago 스냅샷을 stock_code로만 조인해, 모든 리밸런싱 시점에 동일한
+  모멘텀 값을 붙이는 버그가 있었다. compute_point_in_time_ratios가 PER/PBR/배당수익률을
+  prices_by_date에서 시점별로 재계산하는 것과 동일한 원칙으로, momentum_prices_at_dates()가
+  리밸런싱 시점 t마다 t-1개월/t-12개월 시점의 실제 종가를 data/cleaned/prices(전체 일별 시세)
+  에서 다시 조회해 momentum_t를 계산한다. 03_build_indicators.py의 momentum 컬럼(및 03번을
+  참조하는 notebooks/_verify_indicators_quick.py 등)은 그대로 두고, 04번의 스크리닝에서만
+  momentum 대신 momentum_t를 사용한다.
+
 입력:
   - conf/strategies.yaml
   - data/indicators (year 파티셔닝, rcept_no 포함)
@@ -44,7 +54,7 @@ jobs/04_backtest_grid_threshold.py로 보존)
 from __future__ import annotations
 
 import argparse
-from datetime import date
+from datetime import date, timedelta
 
 import yaml
 from pyspark.sql import DataFrame, SparkSession
@@ -54,6 +64,24 @@ from pyspark.sql.window import Window
 # 03_build_indicators.py의 MAX_VALID_DIVIDEND_YIELD와 동일 - 시점별 배당수익률 재계산에도
 # 같은 이상치 기준(공시 오류로 비정상적으로 큰 배당수익률 제외)을 적용해야 하므로 값을 복제한다.
 MAX_VALID_DIVIDEND_YIELD = 100.0
+
+
+def months_ago(base_str: str, months: int) -> str:
+    """YYYYMMDD 문자열 기준 N개월 전 날짜(YYYYMMDD)를 계산한다. 01_ingest_raw.py의 months_ago와
+    동일 로직(FinancialIndicatorService.resolveMomentum의 baseDt.minusMonths(N))을 여기서도
+    복제해야 한다 - 01번은 "배치 실행 시점" 단 한 번만 이 계산을 하지만, 04번은 리밸런싱 시점
+    t마다(monthly 36개 + quarterly 12개) 반복해야 하므로 t별로 호출 가능한 형태가 필요하다."""
+    base = date(int(base_str[:4]), int(base_str[4:6]), int(base_str[6:8]))
+    total_month = base.year * 12 + (base.month - 1) - months
+    year, month = divmod(total_month, 12)
+    month += 1
+    if month == 12:
+        next_month_first = date(year + 1, 1, 1)
+    else:
+        next_month_first = date(year, month + 1, 1)
+    last_day_of_month = (next_month_first - timedelta(days=1)).day
+    day = min(base.day, last_day_of_month)
+    return date(year, month, day).strftime("%Y%m%d")
 
 
 def load_strategies(spark: SparkSession, path: str) -> DataFrame:
@@ -119,6 +147,56 @@ def prices_at_dates(spark: SparkSession, prices: DataFrame, rebalance_dates: lis
         .select("stock_code", F.col("close_price").alias("price"),
                 F.col("listed_share_count").alias("share_count_t"),
                 "rebalance_date")
+
+
+def momentum_prices_at_dates(spark: SparkSession, prices: DataFrame, rebalance_dates: list[str]) -> DataFrame:
+    """리밸런싱 시점 t마다 t-1개월/t-12개월 시점의 "그 날짜 이하 가장 최근 거래일" 종가를 구해
+    (stock_code, rebalance_date) -> price_1m_ago, price_12m_ago 테이블을 만든다.
+
+    KNOWN_ISSUES.md가 지적한 모멘텀 룩어헤드 바이어스 수정: 03_build_indicators.py의 join_momentum은
+    01_ingest_raw.py가 "배치 실행 시점" 단 하나에 대해서만 수집한 1m_ago/12m_ago 스냅샷을 stock_code로만
+    조인해 모든 리밸런싱 시점에 동일한 모멘텀 값을 붙였다. compute_point_in_time_ratios가 PER/PBR/
+    배당수익률을 prices_by_date(전체 일별 시세)에서 시점별로 재계산하는 것과 같은 방식으로, 모멘텀도
+    t-1개월/t-12개월 날짜를 t마다 새로 계산해 조인한다.
+
+    구현: t-1개월/t-12개월 날짜를 rebalance_date별로 미리 계산해 매핑 테이블(momentum_date_map)을
+    만든 뒤, prices_at_dates와 동일한 벡터화 패턴(날짜 집합을 crossJoin + "그 날짜 이하 최신" Window)을
+    momentum_date 축에 적용하고, 마지막에 momentum_date -> rebalance_date로 다시 매핑해 되돌린다.
+    이렇게 하면 시점 수(rebalance_dates)와 무관하게 계획 조각이 고정되는 vectorization 원칙이 유지된다."""
+    momentum_date_map = spark.createDataFrame(
+        [(rd, months_ago(rd, 1), months_ago(rd, 12)) for rd in rebalance_dates],
+        ["rebalance_date", "date_1m_ago", "date_12m_ago"],
+    )
+
+    # 1m/12m 목표 날짜를 하나의 축(momentum_date)으로 합쳐 조회 - 두 번 따로 조인하면
+    # prices 스캔이 두 배가 되므로, distinct 날짜 목록에 대해 한 번만 "그 날짜 이하 최신가"를 구한다.
+    target_dates = sorted({
+        d for rd in rebalance_dates for d in (months_ago(rd, 1), months_ago(rd, 12))
+    })
+    current = prices.filter(F.col("snapshot_type") == "current")
+    dates_df = spark.createDataFrame([(d,) for d in target_dates], ["momentum_date"])
+    paired = current.crossJoin(F.broadcast(dates_df)) \
+        .filter(F.col("bas_dt") <= F.col("momentum_date"))
+
+    w = Window.partitionBy("stock_code", "momentum_date").orderBy(F.desc("bas_dt"))
+    price_by_momentum_date = paired.withColumn("_rank", F.row_number().over(w)) \
+        .filter(F.col("_rank") == 1) \
+        .select("stock_code", F.col("close_price").alias("momentum_price"), "momentum_date")
+
+    p1m = price_by_momentum_date.select(
+        "stock_code", F.col("momentum_price").alias("price_1m_ago"),
+        F.col("momentum_date").alias("date_1m_ago"),
+    )
+    p12m = price_by_momentum_date.select(
+        "stock_code", F.col("momentum_price").alias("price_12m_ago"),
+        F.col("momentum_date").alias("date_12m_ago"),
+    )
+
+    # momentum_date_map(시점 수만큼의 작은 테이블)을 broadcast해 큰 쪽(p1m/p12m, 종목 수 x 날짜 수 규모)의
+    # 셔플을 없앤다 - prices_at_dates가 작은 날짜 테이블 쪽에 broadcast를 거는 것과 동일한 원칙.
+    result = F.broadcast(momentum_date_map).join(p1m, on="date_1m_ago", how="left") \
+        .join(p12m, on=["date_12m_ago", "stock_code"], how="left")
+    return result.select("stock_code", "rebalance_date", "price_1m_ago", "price_12m_ago")
 
 
 def latest_valid_indicators(spark: SparkSession, indicators: DataFrame, rebalance_dates: list[str]) -> DataFrame:
@@ -222,12 +300,13 @@ def add_percentile_rank(df: DataFrame, value_col: str, rank_col: str, partition_
     return df.withColumn(rank_col, percentile)
 
 
-def screen_portfolio(spark: SparkSession, indicators: DataFrame, prices_by_date: DataFrame,
+def screen_portfolio(spark: SparkSession, indicators: DataFrame, prices: DataFrame, prices_by_date: DataFrame,
                       strategies: DataFrame, companies: DataFrame, rebalance_dates: list[str]) -> DataFrame:
     """전략별로 F-Score 필터를 통과한 종목 중 7팩터 백분위 가중합산 점수(value_score) 상위
     portfolio_size종목을, 리밸런싱 시점 전체에 대해 한 번에 선정한다(Top100Service.scoreAll() 재현).
     prices_by_date는 prices_at_dates의 출력(모든 시점의 stock_code당 1행 스냅샷이 rebalance_date
-    컬럼으로 이미 구분되어 있음)을 그대로 넘긴다.
+    컬럼으로 이미 구분되어 있음)을 그대로 넘긴다. prices는 momentum_prices_at_dates가 t-1개월/
+    t-12개월 가격을 새로 조회하기 위해 필요한 전체 일별 시세 원본이다.
 
     벡터화: 원래는 이 함수가 rebalance_date 스칼라 하나만 받아 시점 하나를 처리했고, 호출부
     (run_for_rebalance_group)가 시점 수만큼 파이썬 for문으로 이 함수를 호출해 unionByName으로
@@ -244,6 +323,17 @@ def screen_portfolio(spark: SparkSession, indicators: DataFrame, prices_by_date:
     # 애초에 매매 불가하므로 스크리닝 대상에서 자연히 제외된다.
     ind_priced = ind.join(prices_by_date, on=["stock_code", "rebalance_date"], how="inner")
     ind_priced = compute_point_in_time_ratios(ind_priced)
+
+    # 모멘텀도 PER/PBR과 동일한 원칙(시점 t의 실제 데이터만 사용)으로 재계산한다. left join: t-12개월
+    # 시점의 가격이 없는 경우(예: 그 종목이 그때 아직 상장 전) momentum_t는 null이 되고, 이후
+    # add_percentile_rank의 fill_value(-inf)로 최하위 순위 취급된다 - 03번 momentum의 null 처리와 동일한 관례.
+    momentum_prices = momentum_prices_at_dates(spark, prices, rebalance_dates)
+    ind_priced = ind_priced.join(momentum_prices, on=["stock_code", "rebalance_date"], how="left")
+    ind_priced = ind_priced.withColumn(
+        "momentum_t",
+        F.when(F.col("price_12m_ago") > 0,
+               F.round((F.col("price_1m_ago") - F.col("price_12m_ago")) / F.col("price_12m_ago") * 100, 2)),
+    )
 
     # 전략 수(21,870) x (종목 수 x 시점 수) 조합 생성. 전략 테이블이 작아(1.9MB 안팎, 컬럼 10개
     # 안팎) autoBroadcastJoinThreshold(10MB)보다 작으므로 broadcast로 셔플을 없앤다.
@@ -266,7 +356,7 @@ def screen_portfolio(spark: SparkSession, indicators: DataFrame, prices_by_date:
                                   ascending=False, fill_value=float("-inf"))
     joined = add_percentile_rank(joined, "eps_growth_rate", "eps_growth_pctl", partition_cols,
                                   ascending=False, fill_value=float("-inf"))
-    joined = add_percentile_rank(joined, "momentum", "momentum_pctl", partition_cols,
+    joined = add_percentile_rank(joined, "momentum_t", "momentum_pctl", partition_cols,
                                   ascending=False, fill_value=float("-inf"))
 
     scored = joined.withColumn(
@@ -415,7 +505,7 @@ def run_for_rebalance_group(spark: SparkSession, indicators: DataFrame, prices: 
     # 순회하던 것과 동일한 의미로, screen_portfolio에 넘기는 시점 목록에서 마지막 시점을 제외한다.
     buy_dates = rebalance_dates[:-1]
     buy_prices_by_date = prices_by_date.filter(F.col("rebalance_date").isin(buy_dates))
-    portfolios = screen_portfolio(spark, indicators, buy_prices_by_date, group_strategies, companies, buy_dates)
+    portfolios = screen_portfolio(spark, indicators, prices, buy_prices_by_date, group_strategies, companies, buy_dates)
     portfolios = portfolios.cache()
     portfolios.count()  # 캐시를 즉시 실체화해 이후 단계에서 lineage 재계산이 일어나지 않게 함
 
