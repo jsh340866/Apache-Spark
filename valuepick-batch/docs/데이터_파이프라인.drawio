@@ -1,0 +1,121 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.6.6 Chrome/144.0.7559.236 Electron/40.8.4 Safari/537.36" version="29.6.6">
+  <diagram name="페이지-1" id="IxxC2CMM2W_lURnYqxVg">
+    <mxGraphModel dx="1410" dy="825" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="960" pageHeight="740" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="hIn" parent="1" style="text;html=1;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontSize=14;fontStyle=1;fontColor=#888888;" value="입력" vertex="1">
+          <mxGeometry height="26" width="220" x="40" y="18" as="geometry" />
+        </mxCell>
+        <mxCell id="hProc" parent="1" style="text;html=1;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontSize=14;fontStyle=1;fontColor=#888888;" value="처리 (SPARK JOB)" vertex="1">
+          <mxGeometry height="26" width="340" x="300" y="18" as="geometry" />
+        </mxCell>
+        <mxCell id="hOut" parent="1" style="text;html=1;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontSize=14;fontStyle=1;fontColor=#888888;" value="출력" vertex="1">
+          <mxGeometry height="26" width="240" x="680" y="18" as="geometry" />
+        </mxCell>
+        <mxCell id="in1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;" value="외부 API&lt;br&gt;DART · 공공데이터포털&lt;br&gt;KRX · 한국수출입은행" vertex="1">
+          <mxGeometry height="90" width="220" x="40" y="54" as="geometry" />
+        </mxCell>
+        <mxCell id="proc1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;" value="01&lt;br&gt;ingest_raw.py — 원천 수집" vertex="1">
+          <mxGeometry height="90" width="340" x="300" y="54" as="geometry" />
+        </mxCell>
+        <mxCell id="out1" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" value="PARQUET&lt;br&gt;원천 데이터&lt;br&gt;(종목 · 시세 · 재무 · 배당)" vertex="1">
+          <mxGeometry height="90" width="240" x="680" y="54" as="geometry" />
+        </mxCell>
+        <mxCell id="in2" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" value="PARQUET&lt;br&gt;원천 시세 데이터&lt;br&gt;(당일 스냅샷)" vertex="1">
+          <mxGeometry height="80" width="220" x="40" y="182" as="geometry" />
+        </mxCell>
+        <mxCell id="proc2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;" value="02&lt;br&gt;clean_prices.py — 시세 정제" vertex="1">
+          <mxGeometry height="80" width="340" x="300" y="182" as="geometry" />
+        </mxCell>
+        <mxCell id="out2" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" value="PARQUET&lt;br&gt;정제된 시세 데이터" vertex="1">
+          <mxGeometry height="80" width="240" x="680" y="182" as="geometry" />
+        </mxCell>
+        <mxCell id="in3" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" value="PARQUET&lt;br&gt;정제된 시세 · 재무 · 배당 데이터" vertex="1">
+          <mxGeometry height="100" width="220" x="38" y="299" as="geometry" />
+        </mxCell>
+        <mxCell id="proc3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;" value="03&lt;br&gt;build_indicators.py — 지표 계산" vertex="1">
+          <mxGeometry height="100" width="340" x="298" y="299" as="geometry" />
+        </mxCell>
+        <mxCell id="out3" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" value="PARQUET&lt;br&gt;종목별 투자 지표&lt;br&gt;(종목 × 연도별)" vertex="1">
+          <mxGeometry height="100" width="240" x="678" y="299" as="geometry" />
+        </mxCell>
+        <mxCell id="in4" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" value="PARQUET&lt;br&gt;투자 지표 · 시세 · 종목 정보" vertex="1">
+          <mxGeometry height="90" width="220" x="37" y="437" as="geometry" />
+        </mxCell>
+        <mxCell id="in4cfg" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;" value="CONFIG&lt;br&gt;백테스트 전략 정의&lt;br&gt;(21,870 개 조합)" vertex="1">
+          <mxGeometry height="72" width="220" x="37" y="535" as="geometry" />
+        </mxCell>
+        <mxCell id="proc4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;" value="04&lt;br&gt;backtest_grid.py — 백테스트 (핵심)" vertex="1">
+          <mxGeometry height="170" width="340" x="297" y="437" as="geometry" />
+        </mxCell>
+        <mxCell id="out4" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" value="PARQUET&lt;br&gt;전략별 백테스트 결과&lt;br&gt;(21,870개 전략,&lt;br&gt;구간별 수익률 포함)" vertex="1">
+          <mxGeometry height="170" width="240" x="677" y="437" as="geometry" />
+        </mxCell>
+        <mxCell id="in5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" value="PARQUET&lt;br&gt;백테스트 결과" vertex="1">
+          <mxGeometry height="90" width="220" x="37" y="642" as="geometry" />
+        </mxCell>
+        <mxCell id="proc5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;" value="05&lt;br&gt;export_to_mysql.py — 서빙" vertex="1">
+          <mxGeometry height="90" width="340" x="297" y="642" as="geometry" />
+        </mxCell>
+        <mxCell id="out5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" value="&lt;div&gt;MYSQL&lt;br&gt;전략별 성과 · 백테스트 결과&lt;br&gt;(market별 all/kospi 분리)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="240" x="677" y="642" as="geometry" />
+        </mxCell>
+        <mxCell id="footer" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" value="가중치 프리셋 3⁷ = 2,187   ×   리밸런싱 주기 2   ×   보유종목수 5   =   21,870개 전략" vertex="1">
+          <mxGeometry height="50" width="880" x="37" y="752" as="geometry" />
+        </mxCell>
+        <mxCell id="e1a" edge="1" parent="1" source="in1" style="edgeStyle=none;html=1;endArrow=block;strokeColor=#666666;" target="proc1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e1b" edge="1" parent="1" source="proc1" style="edgeStyle=none;html=1;endArrow=block;strokeColor=#666666;" target="out1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2a" edge="1" parent="1" source="in2" style="edgeStyle=none;html=1;endArrow=block;strokeColor=#666666;" target="proc2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2b" edge="1" parent="1" source="proc2" style="edgeStyle=none;html=1;endArrow=block;strokeColor=#666666;" target="out2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3a" edge="1" parent="1" source="in3" style="edgeStyle=none;html=1;endArrow=block;strokeColor=#666666;" target="proc3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3b" edge="1" parent="1" source="proc3" style="edgeStyle=none;html=1;endArrow=block;strokeColor=#666666;" target="out3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4a" edge="1" parent="1" source="in4" style="edgeStyle=none;html=1;endArrow=block;strokeColor=#666666;" target="proc4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4cfg" edge="1" parent="1" source="in4cfg" style="edgeStyle=none;html=1;endArrow=block;strokeColor=#666666;" target="proc4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4b" edge="1" parent="1" source="proc4" style="edgeStyle=none;html=1;endArrow=block;strokeColor=#666666;" target="out4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5a" edge="1" parent="1" source="in5" style="edgeStyle=none;html=1;endArrow=block;strokeColor=#666666;" target="proc5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5b" edge="1" parent="1" source="proc5" style="edgeStyle=none;html=1;endArrow=block;strokeColor=#666666;" target="out5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v12" edge="1" parent="1" source="out1" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;dashed=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=0;exitDx=0;exitDy=0;exitPerimeter=0;" target="in2">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="793" y="211" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="v23" edge="1" parent="1" source="out2" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;dashed=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="in3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v34" edge="1" parent="1" source="out3" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;dashed=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=0;exitDx=0;exitDy=0;exitPerimeter=0;" target="in4">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="786" y="495" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="v45" edge="1" parent="1" source="out4" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;dashed=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=0;exitDx=0;exitDy=0;exitPerimeter=0;" target="in5">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="804" y="638" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
